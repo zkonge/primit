@@ -1,102 +1,87 @@
-use core::marker::PhantomData;
-
-use self::sha256::SHA256Compressor;
-
 pub mod md5;
 pub mod sha256;
 
 //Merkle-Damgård structure
-pub trait Compressor<const STATE_SIZE: usize, const COMPRESS_SIZE: usize> {
-    const INIT_VECTOR: [u32; STATE_SIZE];
+
+// use crate::util::endian::EndianConvertion;
+
+pub trait Digest {
     const LENGTH: usize;
-    fn compress(state: &mut [u32; STATE_SIZE], data: &[u8; COMPRESS_SIZE]);
+
+    fn new() -> Self;
+    fn update(&mut self, data: &[u8]);
+    fn digest(self) -> [u8; Self::LENGTH];
 }
 
-pub struct MDHash<
-    const STATE_SIZE: usize,
-    const COMPRESS_SIZE: usize,
-    C: Compressor<STATE_SIZE, COMPRESS_SIZE>,
-> {
-    count: u64,
-    state: [u32; STATE_SIZE],
-    buffer: [u8; COMPRESS_SIZE],
-    buffer_offset: usize,
-    _p: PhantomData<C>,
-}
+// pub(crate) fn general_update<E, const STATE_SIZE: usize, const COMPRESS_SIZE: usize>(
+//     count: &mut u64,
+//     state: &mut [u32; STATE_SIZE],
+//     buffer: &mut [u8; COMPRESS_SIZE],
+//     buffer_offset: &mut usize,
+//     compress: fn(&mut [u32; STATE_SIZE], &[u8; COMPRESS_SIZE]),
+//     data: &[u8],
+// ) where
+//     E: EndianConvertion,
+// {
+//     let data_length = data.len();
 
-impl<const SS: usize, const CS: usize, C: Compressor<SS, CS>> MDHash<SS, CS, C> {
-    pub fn new() -> Self {
-        Self {
-            count: 0,
-            state: C::INIT_VECTOR,
-            buffer: [0; CS],
-            buffer_offset: 0,
-            _p: PhantomData,
-        }
-    }
-    pub fn update(&mut self, data: &[u8]) {
-        let Self {
-            count,
-            buffer,
-            buffer_offset,
-            state,
-            ..
-        } = self;
+//     // process previous block
+//     if *buffer_offset + data_length < COMPRESS_SIZE {
+//         buffer[*buffer_offset..*buffer_offset + data_length].copy_from_slice(data);
+//         *buffer_offset += data_length;
+//         *count += data_length as u64;
+//         return;
+//     }
 
-        // deal with previous block
-        let data_length = data.len();
+//     // compress buffer
+//     buffer[*buffer_offset..].copy_from_slice(&data[..COMPRESS_SIZE - *buffer_offset]);
+//     compress(state, buffer);
+//     *count += COMPRESS_SIZE as u64;
 
-        if *buffer_offset + data_length < CS {
-            buffer[*buffer_offset..*buffer_offset + data_length].copy_from_slice(data);
-            *buffer_offset += data_length;
-            *count += data_length as u64;
-            return;
-        }
+//     // process current blocks
+//     let (chunks, remain) = data[COMPRESS_SIZE - *buffer_offset..].as_chunks();
+//     for chunk in chunks {
+//         compress(state, chunk);
+//     }
+//     *count += COMPRESS_SIZE as u64 * chunks.len() as u64;
 
-        buffer[*buffer_offset..].copy_from_slice(&data[..CS - *buffer_offset]);
-        C::compress(state, buffer);
-        *count += CS as u64;
+//     // move remainder to buffer
+//     buffer[..remain.len()].copy_from_slice(remain);
+//     *buffer_offset = remain.len();
+//     *count += remain.len() as u64;
+// }
 
-        // process current blocks
-        let (chunks, remainder) = data[CS - *buffer_offset..].as_chunks();
-        for chunk in chunks {
-            C::compress(state, chunk);
-            *count += CS as u64;
-        }
+// pub(crate) fn general_digest<
+//     E,
+//     const STATE_SIZE: usize,
+//     const COMPRESS_SIZE: usize,
+//     const LENGTH: usize,
+// >(
+//     count: u64,
+//     mut state: [u32; STATE_SIZE],
+//     mut buffer: [u8; COMPRESS_SIZE],
+//     buffer_offset: usize,
+//     compress: fn(&mut [u32; STATE_SIZE], &[u8; COMPRESS_SIZE]),
+// ) -> [u8; LENGTH]
+// where
+//     E: EndianConvertion,
+// {
+//     let mut result = [0u8; LENGTH];
 
-        buffer[..remainder.len()].copy_from_slice(remainder);
-        *buffer_offset += remainder.len();
-    }
-    pub fn digest(mut self) -> [u8; C::LENGTH] {
-        let mut digest = [0u8; C::LENGTH];
+//     // padding
+//     buffer[buffer_offset] = 0x80;
+//     buffer[buffer_offset + 1..].fill(0);
 
-        // padding
-        let length = self.count as usize % CS;
-        self.buffer[length] = 0x80;
+//     if buffer_offset >= COMPRESS_SIZE - 8 {
+//         // not enough space for bit size
+//         compress(&mut state, &buffer);
+//         buffer.fill(0);
+//     }
 
-        // not enough space for bit size
-        if length < CS - 8 {
-            self.buffer[length + 1..CS - 8].fill(0);
-        } else {
-            C::compress(&mut self.state, &self.buffer);
-            self.buffer.fill(0);
-        }
+//     buffer[COMPRESS_SIZE - 8..].copy_from_slice(&(count * 8).to_be_bytes());
 
-        self.buffer[CS - 8..].copy_from_slice(&(self.count * 8).to_be_bytes());
+//     compress(&mut state, &buffer);
 
-        C::compress(&mut self.state, &self.buffer);
-
-        for (output, input) in digest.as_chunks_mut().0.iter_mut().zip(self.state) {
-            *output = input.to_be_bytes();
-        }
-        digest
-    }
-
-    pub fn compute(data: &[u8]) -> [u8; C::LENGTH] {
-        let mut hasher = Self::new();
-        hasher.update(data);
-        hasher.digest()
-    }
-}
-
-pub type SHA256 = MDHash<{ sha256::STATE_SIZE }, { sha256::COMPRESS_SIZE }, SHA256Compressor>;
+//     E::to_bytes(&mut result, &state);
+//     result
+// }

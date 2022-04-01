@@ -60,6 +60,20 @@ pub fn decode(input: &[u8], output: &mut [u8]) -> Result<(), HexCodecError> {
         })
 }
 
+pub fn encode_fix<const N: usize>(input: &[u8; N]) -> [u8; N * 2] {
+    let mut r = [0u8; N * 2];
+    encode(input, &mut r).unwrap();
+    r
+}
+
+pub fn decode_fix<const N: usize>(input: &[u8; N * 2]) -> Result<[u8; N], HexCodecError> {
+    let mut r = [0u8; N];
+    if let Err(e @ HexCodecError::InvalidHexCharacter) = decode(input, &mut r) {
+        return Err(e);
+    }
+    Ok(r)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

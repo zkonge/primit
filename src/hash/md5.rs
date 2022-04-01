@@ -1,213 +1,145 @@
 // RFC1321 https://tools.ietf.org/html/rfc1321
 
-const PADDING: [u8; 64] = const {
-    let mut p = [0u8; 64];
-    p[0] = 0x80;
-    p
-};
+use core::mem::size_of;
 
-/// MD5 context.
-#[derive(Debug, Clone)]
+use crate::utils::endian::{EndianConvertion, LittleEndian};
+
+use super::Digest;
+
+pub const STATE_SIZE: usize = 4;
+pub const COMPRESS_SIZE: usize = 64;
+pub const COUNTER_SIZE: usize = size_of::<u64>();
+
+const R: [u8; 64] = [
+    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9,
+    14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15,
+    21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+];
+
+const K: [u32; 64] = [
+    0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613, 0xfd469501,
+    0x698098d8, 0x8b44f7af, 0xffff5bb1, 0x895cd7be, 0x6b901122, 0xfd987193, 0xa679438e, 0x49b40821,
+    0xf61e2562, 0xc040b340, 0x265e5a51, 0xe9b6c7aa, 0xd62f105d, 0x02441453, 0xd8a1e681, 0xe7d3fbc8,
+    0x21e1cde6, 0xc33707d6, 0xf4d50d87, 0x455a14ed, 0xa9e3e905, 0xfcefa3f8, 0x676f02d9, 0x8d2a4c8a,
+    0xfffa3942, 0x8771f681, 0x6d9d6122, 0xfde5380c, 0xa4beea44, 0x4bdecfa9, 0xf6bb4b60, 0xbebfbc70,
+    0x289b7ec6, 0xeaa127fa, 0xd4ef3085, 0x04881d05, 0xd9d4d039, 0xe6db99e5, 0x1fa27cf8, 0xc4ac5665,
+    0xf4292244, 0x432aff97, 0xab9423a7, 0xfc93a039, 0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1,
+    0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1, 0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391,
+];
+
+const INIT_VECTOR: [u32; STATE_SIZE] = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476];
+
 pub struct MD5 {
-    buffer: [u8; 64],
-    count: [u32; 2],
-    state: [u32; 4],
+    count: u64,
+    state: [u32; STATE_SIZE],
+    buffer: [u8; COMPRESS_SIZE],
+    buffer_offset: usize,
 }
 
-impl MD5 {
-    pub const LENGTH: usize = 16;
+impl Digest for MD5 {
+    const LENGTH: usize = 16;
 
-    pub fn new() -> MD5 {
-        MD5 {
-            buffer: [0; 64],
-            count: [0, 0],
-            state: [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476],
+    fn new() -> Self {
+        Self {
+            count: 0,
+            state: INIT_VECTOR,
+            buffer: [0; COMPRESS_SIZE],
+            // point to first unused position
+            buffer_offset: 0,
         }
     }
 
-    pub fn update(&mut self, data: &[u8]) {
-        for chunk in data.as_ref().chunks(core::u32::MAX as usize) {
-            compress(self, chunk);
+    fn update(&mut self, data: &[u8]) {
+        let Self {
+            count,
+            buffer,
+            buffer_offset,
+            state,
+        } = self;
+
+        let data_length = data.len();
+
+        // process previous block
+        if *buffer_offset + data_length < COMPRESS_SIZE {
+            buffer[*buffer_offset..*buffer_offset + data_length].copy_from_slice(data);
+            *buffer_offset += data_length;
+            *count += data_length as u64;
+            return;
         }
+
+        // compress buffer
+        buffer[*buffer_offset..].copy_from_slice(&data[..COMPRESS_SIZE - *buffer_offset]);
+        compress(state, buffer);
+        *count += COMPRESS_SIZE as u64;
+
+        // process current blocks
+        let (chunks, remain) = data[COMPRESS_SIZE - *buffer_offset..].as_chunks();
+        for chunk in chunks {
+            compress(state, chunk);
+        }
+        *count += COMPRESS_SIZE as u64 * chunks.len() as u64;
+
+        // move remainder to buffer
+        buffer[..remain.len()].copy_from_slice(remain);
+        *buffer_offset = remain.len();
+        *count += remain.len() as u64;
     }
 
-    pub fn digest(mut self) -> [u8; Self::LENGTH] {
-        let mut input = [0u32; 16];
-        let mut digest = [0u8; Self::LENGTH];
+    fn digest(self) -> [u8; Self::LENGTH] {
+        let Self {
+            count,
+            mut state,
+            mut buffer,
+            buffer_offset,
+        } = self;
 
-        let k = ((self.count[0] >> 3) & 0x3f) as usize;
-        input[14] = self.count[0];
-        input[15] = self.count[1];
-        compress(
-            &mut self,
-            &PADDING[..(if k < 56 { 56 - k } else { 120 - k })],
-        );
-        for (output, input) in input[..14].iter_mut().zip(self.buffer.as_chunks().0) {
-            *output = u32::from_le_bytes(*input);
+        let mut result = [0u8; Self::LENGTH];
+
+        // padding
+        buffer[buffer_offset] = 0x80;
+        buffer[buffer_offset + 1..].fill(0);
+
+        if buffer_offset >= COMPRESS_SIZE - COUNTER_SIZE {
+            // not enough space for bit size
+            compress(&mut state, &buffer);
+            buffer.fill(0);
         }
-        transform(&mut self.state, &input);
-        for (output, input) in digest.as_chunks_mut().0.iter_mut().zip(self.state) {
-            *output = input.to_le_bytes();
-        }
-        digest
+
+        buffer[COMPRESS_SIZE - COUNTER_SIZE..].copy_from_slice(&(count * 8).to_le_bytes());
+
+        compress(&mut state, &buffer);
+
+        LittleEndian::to_bytes(&mut result, &state);
+        result
     }
 }
 
-fn compress(
-    MD5 {
-        buffer,
-        count,
-        state,
-    }: &mut MD5,
-    data: &[u8],
-) {
-    let mut input = [0u32; 16];
-    let mut k = ((count[0] >> 3) & 0x3f) as usize;
-    let length = data.len() as u32;
-
-    count[0] = count[0].wrapping_add(length << 3);
-    if count[0] < length << 3 {
-        count[1] = count[1].wrapping_add(1);
-    }
-    count[1] = count[1].wrapping_add(length >> 29);
-    for &value in data {
-        buffer[k] = value;
-        k += 1;
-        if k == 0x40 {
-            for (output, input) in input.iter_mut().zip(buffer.as_chunks().0) {
-                *output = u32::from_le_bytes(*input);
-            }
-            transform(state, &input);
-            k = 0;
-        }
-    }
-}
-
-fn transform(state: &mut [u32; 4], input: &[u32; 16]) {
+fn compress(state: &mut [u32; STATE_SIZE], data: &[u8; COMPRESS_SIZE]) {
     let [mut a, mut b, mut c, mut d] = state;
-    macro_rules! add(
-        ($a:expr, $b:expr) => ($a.wrapping_add($b));
-    );
-    macro_rules! rotate(
-        ($x:expr, $n:expr) => (($x << $n) | ($x >> (32 - $n)));
-    );
-    macro_rules! T(
-        ($a:expr, $b:expr, $c:expr, $d:expr, $x:expr, $s:expr, $ac:expr) => ({
-            $a = add!(add!(add!($a, F!($b, $c, $d)), $x), $ac);
-            $a = rotate!($a, $s);
-            $a = add!($a, $b);
-        });
-    );
-    {
-        macro_rules! F(
-            ($x:expr, $y:expr, $z:expr) => (($x & $y) | (!$x & $z));
-        );
-        const S1: u32 = 7;
-        const S2: u32 = 12;
-        const S3: u32 = 17;
-        const S4: u32 = 22;
-        T!(a, b, c, d, input[0], S1, 3614090360);
-        T!(d, a, b, c, input[1], S2, 3905402710);
-        T!(c, d, a, b, input[2], S3, 606105819);
-        T!(b, c, d, a, input[3], S4, 3250441966);
-        T!(a, b, c, d, input[4], S1, 4118548399);
-        T!(d, a, b, c, input[5], S2, 1200080426);
-        T!(c, d, a, b, input[6], S3, 2821735955);
-        T!(b, c, d, a, input[7], S4, 4249261313);
-        T!(a, b, c, d, input[8], S1, 1770035416);
-        T!(d, a, b, c, input[9], S2, 2336552879);
-        T!(c, d, a, b, input[10], S3, 4294925233);
-        T!(b, c, d, a, input[11], S4, 2304563134);
-        T!(a, b, c, d, input[12], S1, 1804603682);
-        T!(d, a, b, c, input[13], S2, 4254626195);
-        T!(c, d, a, b, input[14], S3, 2792965006);
-        T!(b, c, d, a, input[15], S4, 1236535329);
-    }
-    {
-        macro_rules! F(
-            ($x:expr, $y:expr, $z:expr) => (($x & $z) | ($y & !$z));
-        );
-        const S1: u32 = 5;
-        const S2: u32 = 9;
-        const S3: u32 = 14;
-        const S4: u32 = 20;
-        T!(a, b, c, d, input[1], S1, 4129170786);
-        T!(d, a, b, c, input[6], S2, 3225465664);
-        T!(c, d, a, b, input[11], S3, 643717713);
-        T!(b, c, d, a, input[0], S4, 3921069994);
-        T!(a, b, c, d, input[5], S1, 3593408605);
-        T!(d, a, b, c, input[10], S2, 38016083);
-        T!(c, d, a, b, input[15], S3, 3634488961);
-        T!(b, c, d, a, input[4], S4, 3889429448);
-        T!(a, b, c, d, input[9], S1, 568446438);
-        T!(d, a, b, c, input[14], S2, 3275163606);
-        T!(c, d, a, b, input[3], S3, 4107603335);
-        T!(b, c, d, a, input[8], S4, 1163531501);
-        T!(a, b, c, d, input[13], S1, 2850285829);
-        T!(d, a, b, c, input[2], S2, 4243563512);
-        T!(c, d, a, b, input[7], S3, 1735328473);
-        T!(b, c, d, a, input[12], S4, 2368359562);
-    }
-    {
-        macro_rules! F(
-            ($x:expr, $y:expr, $z:expr) => ($x ^ $y ^ $z);
-        );
-        const S1: u32 = 4;
-        const S2: u32 = 11;
-        const S3: u32 = 16;
-        const S4: u32 = 23;
-        T!(a, b, c, d, input[5], S1, 4294588738);
-        T!(d, a, b, c, input[8], S2, 2272392833);
-        T!(c, d, a, b, input[11], S3, 1839030562);
-        T!(b, c, d, a, input[14], S4, 4259657740);
-        T!(a, b, c, d, input[1], S1, 2763975236);
-        T!(d, a, b, c, input[4], S2, 1272893353);
-        T!(c, d, a, b, input[7], S3, 4139469664);
-        T!(b, c, d, a, input[10], S4, 3200236656);
-        T!(a, b, c, d, input[13], S1, 681279174);
-        T!(d, a, b, c, input[0], S2, 3936430074);
-        T!(c, d, a, b, input[3], S3, 3572445317);
-        T!(b, c, d, a, input[6], S4, 76029189);
-        T!(a, b, c, d, input[9], S1, 3654602809);
-        T!(d, a, b, c, input[12], S2, 3873151461);
-        T!(c, d, a, b, input[15], S3, 530742520);
-        T!(b, c, d, a, input[2], S4, 3299628645);
-    }
-    {
-        macro_rules! F(
-            ($x:expr, $y:expr, $z:expr) => ($y ^ ($x | !$z));
-        );
-        const S1: u32 = 6;
-        const S2: u32 = 10;
-        const S3: u32 = 15;
-        const S4: u32 = 21;
-        T!(a, b, c, d, input[0], S1, 4096336452);
-        T!(d, a, b, c, input[7], S2, 1126891415);
-        T!(c, d, a, b, input[14], S3, 2878612391);
-        T!(b, c, d, a, input[5], S4, 4237533241);
-        T!(a, b, c, d, input[12], S1, 1700485571);
-        T!(d, a, b, c, input[3], S2, 2399980690);
-        T!(c, d, a, b, input[10], S3, 4293915773);
-        T!(b, c, d, a, input[1], S4, 2240044497);
-        T!(a, b, c, d, input[8], S1, 1873313359);
-        T!(d, a, b, c, input[15], S2, 4264355552);
-        T!(c, d, a, b, input[6], S3, 2734768916);
-        T!(b, c, d, a, input[13], S4, 1309151649);
-        T!(a, b, c, d, input[4], S1, 4149444226);
-        T!(d, a, b, c, input[11], S2, 3174756917);
-        T!(c, d, a, b, input[2], S3, 718787259);
-        T!(b, c, d, a, input[9], S4, 3951481745);
-    }
-    state[0] = add!(state[0], a);
-    state[1] = add!(state[1], b);
-    state[2] = add!(state[2], c);
-    state[3] = add!(state[3], d);
-}
+    let mut w = [0u32; COMPRESS_SIZE / 4];
+    LittleEndian::from_bytes(&mut w, data);
 
-impl Default for MD5 {
-    fn default() -> Self {
-        Self::new()
+    for i in 0..64 {
+        let (f, g) = match i {
+            0..16 => ((b & c) | ((!b) & d), i),
+            16..32 => ((d & b) | ((!d) & c), (5 * i + 1) % 16),
+            32..48 => (b ^ c ^ d, (3 * i + 5) % 16),
+            48..64 => (c ^ (b | !d), (7 * i % 16)),
+            _ => unreachable!(),
+        };
+        let temp = d;
+        d = c;
+        c = b;
+        b = (a.wrapping_add(f).wrapping_add(K[i]).wrapping_add(w[g]))
+            .rotate_left(R[i as usize] as u32)
+            .wrapping_add(b);
+        a = temp;
     }
+
+    state
+        .iter_mut()
+        .zip([a, b, c, d])
+        .for_each(|(s, x)| *s = s.wrapping_add(x));
 }
 
 pub fn md5(input: &[u8]) -> [u8; MD5::LENGTH] {
@@ -218,9 +150,10 @@ pub fn md5(input: &[u8]) -> [u8; MD5::LENGTH] {
 
 #[cfg(test)]
 mod tests {
+    use rand::{rngs, Rng, SeedableRng};
     use test::Bencher;
 
-    use crate::util::hex::decode;
+    use crate::utils::hex::decode;
 
     use super::*;
 
@@ -234,6 +167,8 @@ mod tests {
             "abcdefghijklmnopqrstuvwxyz",
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
             "0123456789012345678901234567890123456789012345678901234567890123",
+            "1234567890123456789012345678901234567890123456789012345678901234",
+            "12345678901234567890123456789012345678901234567890123456789012345",
             "12345678901234567890123456789012345678901234567890123456789012345678901234567890",
         ];
         let outputs = [
@@ -244,6 +179,8 @@ mod tests {
             "c3fcd3d76192e4007dfb496cca67e13b",
             "d174ab98d277d9f5a5611c2c9f419d9f",
             "7f7bfd348709deeaace19e3f535f8c54",
+            "eb6c4179c0a7c82cc2828c1e6338e165",
+            "823cc889fc7318dd33dde0654a80b70a",
             "57edf4a22be3c955ac49da2e2107b67a",
         ];
         for (input, &output) in inputs.iter().zip(outputs.iter()) {
@@ -256,6 +193,26 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_md5_fuzz() {
+        use md5::Digest;
+
+        let mut rng = rngs::StdRng::seed_from_u64(0);
+        let mut input = [0u8; 256];
+        for l in 0..input.len() {
+            for _ in 0..50 {
+                rng.fill(&mut input[..l]);
+
+                let mut h = md5::Md5::new();
+                h.update(&input[..l]);
+
+                let output = md5(&input[..l]);
+
+                assert_eq!(h.finalize().as_slice(), &output);
+            }
+        }
+    }
+
     const DATA_LENGTH: usize = 1024 * 256;
 
     #[bench]
@@ -263,5 +220,18 @@ mod tests {
         b.bytes = DATA_LENGTH as u64;
         let d = [0u8; DATA_LENGTH];
         b.iter(|| md5(&d));
+    }
+
+    #[bench]
+    fn bench_rc_md5(b: &mut Bencher) {
+        use md5::Digest;
+
+        b.bytes = DATA_LENGTH as u64;
+        let d = [0u8; DATA_LENGTH];
+        b.iter(|| {
+            let mut h = md5::Md5::new();
+            h.update(&d);
+            h.finalize();
+        });
     }
 }
