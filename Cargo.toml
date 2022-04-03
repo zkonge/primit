@@ -13,15 +13,15 @@ edition = "2021"
 
 [dev-dependencies]
 # hex = "*"
-# sha2 = "*"
-# md-5 = "*"
-# rand = "*"
-# chacha20 = { version = "*" }
+sha2 = "*"
+md-5 = "*"
+rand = "*"
+chacha20 = { version = "*" }
 
 [profile.release]
 codegen-units = 1
 debug = false
 incremental = false
 lto = "fat"
-opt-level = "z"
+opt-level = 3
 panic = "abort"

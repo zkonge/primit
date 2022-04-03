@@ -120,72 +120,72 @@ impl ChaCha20 {
     }
 }
 
-// #[cfg(test)]
-// mod test {
+#[cfg(test)]
+mod test {
 
-//     use test::Bencher;
+    use test::Bencher;
 
-//     use super::ChaCha20;
+    use super::ChaCha20;
 
-//     fn check_keystream(key: &[u8], nonce: &[u8], keystream: &[u8]) {
-//         let mut chacha = ChaCha20::new(key.try_into().unwrap(), nonce.try_into().unwrap());
-//         let mut input = [0u8; 128];
-//         chacha.apply(&mut input[..keystream.len()]);
-//         assert_eq!(&input[..keystream.len()], keystream);
-//     }
+    fn check_keystream(key: &[u8], nonce: &[u8], keystream: &[u8]) {
+        let mut chacha = ChaCha20::new(key.try_into().unwrap(), nonce.try_into().unwrap());
+        let mut input = [0u8; 128];
+        chacha.apply(&mut input[..keystream.len()]);
+        assert_eq!(&input[..keystream.len()], keystream);
+    }
 
-//     #[test]
-//     fn test_chacha20() {
-//         let mut key = [0u8; 32];
-//         let mut nonce = [0u8; 12];
-//         let keystream = b"v\xb8\xe0\xad\xa0\xf1=\x90@]j\xe5S\x86\xbd(\xbd\xd2\x19\xb8\xa0\x8d\xed\x1a\xa86\xef\xcc\x8bw\r\xc7\xdaAY|QWH\x8dw$\xe0?\xb8\xd8J7jC\xb8\xf4\x15\x18\xa1\x1c\xc3\x87\xb6i\xb2\xeee\x86";
-//         check_keystream(&key, &nonce, keystream);
+    #[test]
+    fn test_chacha20() {
+        let mut key = [0u8; 32];
+        let mut nonce = [0u8; 12];
+        let keystream = b"v\xb8\xe0\xad\xa0\xf1=\x90@]j\xe5S\x86\xbd(\xbd\xd2\x19\xb8\xa0\x8d\xed\x1a\xa86\xef\xcc\x8bw\r\xc7\xdaAY|QWH\x8dw$\xe0?\xb8\xd8J7jC\xb8\xf4\x15\x18\xa1\x1c\xc3\x87\xb6i\xb2\xeee\x86";
+        check_keystream(&key, &nonce, keystream);
 
-//         key[31] = 1;
-//         let keystream = b"E@\xf0Z\x9f\x1f\xb2\x96\xd7sn{ \x8e<\x96\xebO\xe1\x83F\x88\xd2`OE\tR\xedC-A\xbb\xe2\xa0\xb6\xeauf\xd2\xa5\xd1\xe7\xe2\rB\xaf,S\xd7\x92\xb1\xc4?\xea\x81~\x9a\xd2u\xaeTic";
-//         check_keystream(&key, &nonce, keystream);
+        key[31] = 1;
+        let keystream = b"E@\xf0Z\x9f\x1f\xb2\x96\xd7sn{ \x8e<\x96\xebO\xe1\x83F\x88\xd2`OE\tR\xedC-A\xbb\xe2\xa0\xb6\xeauf\xd2\xa5\xd1\xe7\xe2\rB\xaf,S\xd7\x92\xb1\xc4?\xea\x81~\x9a\xd2u\xaeTic";
+        check_keystream(&key, &nonce, keystream);
 
-//         key[31] = 0;
-//         nonce[11] = 1;
-//         let keystream = b"\xde\x9c\xba{\xf3\xd6\x9e\xf5\xe7\x86\xdcc\x97?e:\x0bI\xe0\x15\xad\xbf\xf7\x13O\xcb}\xf17\x82\x101\xe8Z\x05\x02x\xa7\x08E'!Os\xef\xc7\xfa[Rw\x06.\xb7\xa0C>D_A\xe3\x1a\xfa\xb7W";
-//         check_keystream(&key, &nonce, keystream);
+        key[31] = 0;
+        nonce[11] = 1;
+        let keystream = b"\xde\x9c\xba{\xf3\xd6\x9e\xf5\xe7\x86\xdcc\x97?e:\x0bI\xe0\x15\xad\xbf\xf7\x13O\xcb}\xf17\x82\x101\xe8Z\x05\x02x\xa7\x08E'!Os\xef\xc7\xfa[Rw\x06.\xb7\xa0C>D_A\xe3\x1a\xfa\xb7W";
+        check_keystream(&key, &nonce, keystream);
 
-//         key[31] = 0;
-//         nonce[11] = 0;
-//         nonce[0] = 1;
-//         let keystream = b"=\xb4\x1d:\xa0\xd3)(]\xe6\xf2%\xe6\xe2K\xd5\x9c\x9a\x17\x00iC\xd5\xc9\xb6\x80\xe3\x87;\xdch:X\x19F\x98\x99\x98\x96\x90\xc2\x81\xcd\x17\xc9aY\xaf\x06\x82\xb5\xb9\x03F\x8aa\xf5\x02(\xcf\tb+Z";
-//         check_keystream(&key, &nonce, keystream);
+        key[31] = 0;
+        nonce[11] = 0;
+        nonce[0] = 1;
+        let keystream = b"=\xb4\x1d:\xa0\xd3)(]\xe6\xf2%\xe6\xe2K\xd5\x9c\x9a\x17\x00iC\xd5\xc9\xb6\x80\xe3\x87;\xdch:X\x19F\x98\x99\x98\x96\x90\xc2\x81\xcd\x17\xc9aY\xaf\x06\x82\xb5\xb9\x03F\x8aa\xf5\x02(\xcf\tb+Z";
+        check_keystream(&key, &nonce, keystream);
 
-//         for i in 0..0x20 {
-//             key[i] = i as u8;
-//         }
-//         for i in 0..0x0c {
-//             nonce[i] = i as u8;
-//         }
-//         let keystream = b"\x10:\xf1\x11\xc1\x8bT\x9d9$\x8f\xb0}`\xc2\x9a\x95\xd1\xdb\x88\xd8\x92\xf7\xb4\xafp\x9a_\xd4z\x9eK\xd5\xff\x9ae\x8d\xd5,p\x8b\xef\x1f\x0fb+7G\x04\x0f\xa3U\x13\x00\xb1\xf2\x93\x15\n\x88b\r_\xed\x89\xfb\x08\x00)\x17\xa5@\xb7\x83?\xf3\x98\x1d\x0ec\xc9p\xb2\xe7Qt\xad\xb9\xe6\x97/\xc5u\xc0\xa6<\xec\x80,\xf3\xe6\x1e\xb1\x9872v\xd8e\x94\x8f#~\x84\xa9t\xfd(\xb8\x9b\x12\xb8\xd9\x07\x90O\x9e\xd6";
-//         check_keystream(&key, &nonce, keystream);
-//     }
+        for i in 0..0x20 {
+            key[i] = i as u8;
+        }
+        for i in 0..0x0c {
+            nonce[i] = i as u8;
+        }
+        let keystream = b"\x10:\xf1\x11\xc1\x8bT\x9d9$\x8f\xb0}`\xc2\x9a\x95\xd1\xdb\x88\xd8\x92\xf7\xb4\xafp\x9a_\xd4z\x9eK\xd5\xff\x9ae\x8d\xd5,p\x8b\xef\x1f\x0fb+7G\x04\x0f\xa3U\x13\x00\xb1\xf2\x93\x15\n\x88b\r_\xed\x89\xfb\x08\x00)\x17\xa5@\xb7\x83?\xf3\x98\x1d\x0ec\xc9p\xb2\xe7Qt\xad\xb9\xe6\x97/\xc5u\xc0\xa6<\xec\x80,\xf3\xe6\x1e\xb1\x9872v\xd8e\x94\x8f#~\x84\xa9t\xfd(\xb8\x9b\x12\xb8\xd9\x07\x90O\x9e\xd6";
+        check_keystream(&key, &nonce, keystream);
+    }
 
-//     const DATA_LENGTH: usize = 1024 * 256;
+    const DATA_LENGTH: usize = 1024 * 256;
 
-//     #[bench]
-//     fn bench_rc_chacha20(b: &mut Bencher) {
-//         use chacha20::cipher::{KeyIvInit, StreamCipher};
-//         use chacha20::ChaCha20;
+    #[bench]
+    fn bench_rc_chacha20(b: &mut Bencher) {
+        use chacha20::cipher::{KeyIvInit, StreamCipher};
+        use chacha20::ChaCha20;
 
-//         b.bytes = DATA_LENGTH as u64;
+        b.bytes = DATA_LENGTH as u64;
 
-//         let mut cp = ChaCha20::new(&[0u8; 32].into(), &[0u8; 12].into());
-//         let mut d = [0u8; DATA_LENGTH];
-//         b.iter(|| cp.apply_keystream(&mut d));
-//     }
+        let mut cp = ChaCha20::new(&[0u8; 32].into(), &[0u8; 12].into());
+        let mut d = [0u8; DATA_LENGTH];
+        b.iter(|| cp.apply_keystream(&mut d));
+    }
 
-//     #[bench]
-//     fn bench_chacha20(b: &mut Bencher) {
-//         b.bytes = DATA_LENGTH as u64;
+    #[bench]
+    fn bench_chacha20(b: &mut Bencher) {
+        b.bytes = DATA_LENGTH as u64;
 
-//         let mut cp = ChaCha20::new(&[0u8; 32], &[0u8; 12]);
-//         let mut d = [0u8; DATA_LENGTH];
-//         b.iter(|| cp.apply(&mut d));
-//     }
-// }
+        let mut cp = ChaCha20::new(&[0u8; 32], &[0u8; 12]);
+        let mut d = [0u8; DATA_LENGTH];
+        b.iter(|| cp.apply(&mut d));
+    }
+}
