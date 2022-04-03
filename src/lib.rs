@@ -1,4 +1,4 @@
-// #![no_std]
+#![no_std]
 #![feature(inline_const)]
 #![feature(exclusive_range_pattern)]
 #![feature(slice_as_chunks)]
