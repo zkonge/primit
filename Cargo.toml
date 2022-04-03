@@ -20,7 +20,7 @@ chacha20 = { version = "*" }
 
 [profile.release]
 codegen-units = 1
-debug = false
+debug = true
 incremental = false
 lto = "fat"
 opt-level = 3

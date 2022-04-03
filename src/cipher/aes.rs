@@ -190,27 +190,3 @@ impl AES128 {
         xor(data, first_key);
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use test::Bencher;
-
-    use super::AES128;
-
-    #[test]
-    fn test_key_expansion() {
-        let _cp = AES128::new(&[0u8; 16]);
-    }
-
-    #[bench]
-    fn bench_aes128(b: &mut Bencher) {
-        b.bytes = 1024 * 256;
-        let mut d = [0u8; 1024 * 256];
-        let cp = AES128::new(&[0u8; 16]);
-        b.iter(|| {
-            for chunk in d.as_chunks_mut::<16>().0 {
-                cp.decrypt(chunk)
-            }
-        });
-    }
-}
