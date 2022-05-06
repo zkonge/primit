@@ -13,7 +13,7 @@ chacha20 = "*"
 
 [profile.release]
 codegen-units = 1
-debug = false
+debug = true
 incremental = false
 lto = "fat"
 opt-level = "s"
