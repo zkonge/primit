@@ -106,7 +106,7 @@ fn mix_columns(data: &mut [u8; 16]) {
 fn inv_mix_columns(data: &mut [u8; 16]) {
     for r in data.as_chunks_mut::<4>().0 {
         let mut a = [0u8; 4];
-        a.copy_from_slice(&r[..4]);
+        a.copy_from_slice(r);
         r[0] = gmul(a[0], 14) ^ gmul(a[3], 9) ^ gmul(a[2], 13) ^ gmul(a[1], 11);
         r[1] = gmul(a[1], 14) ^ gmul(a[0], 9) ^ gmul(a[3], 13) ^ gmul(a[2], 11);
         r[2] = gmul(a[2], 14) ^ gmul(a[1], 9) ^ gmul(a[0], 13) ^ gmul(a[3], 11);
@@ -197,15 +197,29 @@ mod tests {
 
     use super::AES128;
 
+    const DATA_LEN: usize = 1024 * 256;
+
     #[test]
     fn test_key_expansion() {
         let _cp = AES128::new(&[0u8; 16]);
     }
 
     #[bench]
-    fn bench_aes128(b: &mut Bencher) {
-        b.bytes = 1024 * 256;
-        let mut d = [0u8; 1024 * 256];
+    fn bench_aes128_encrypt(b: &mut Bencher) {
+        b.bytes = DATA_LEN as u64;
+        let mut d = [0u8; DATA_LEN];
+        let cp = AES128::new(&[0u8; 16]);
+        b.iter(|| {
+            for chunk in d.as_chunks_mut::<16>().0 {
+                cp.encrypt(chunk)
+            }
+        });
+    }
+
+    #[bench]
+    fn bench_aes128_decrypt(b: &mut Bencher) {
+        b.bytes = DATA_LEN as u64;
+        let mut d = [0u8; DATA_LEN];
         let cp = AES128::new(&[0u8; 16]);
         b.iter(|| {
             for chunk in d.as_chunks_mut::<16>().0 {
