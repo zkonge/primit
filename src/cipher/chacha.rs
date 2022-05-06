@@ -3,14 +3,14 @@ use crate::utils::endian::{EndianConvertion, LittleEndian};
 // "expand 32-byte k"
 const INIT_VECTOR: [u32; 4] = [0x61707865, 0x3320646e, 0x79622d32, 0x6b206574];
 
-pub struct ChaCha20Inner {
+pub(crate) struct ChaChaInner<const R: usize> {
     state: [u32; 16],
     buffer: [u8; 64],
     buffer_offset: usize,
 }
 
-impl ChaCha20Inner {
-    pub fn new(key: &[u8; 32], nonce: &[u8; 12]) -> Self {
+impl<const R: usize> ChaChaInner<R> {
+    pub(crate) fn new(key: &[u8; 32], nonce: &[u8; 12]) -> Self {
         let mut state = [0; 16];
 
         state[0..4].copy_from_slice(&INIT_VECTOR);
@@ -28,23 +28,23 @@ impl ChaCha20Inner {
         context
     }
 
-    fn round20(&self) -> [u32; 16] {
+    fn round(&self) -> [u32; 16] {
         macro_rules! quarter_round {
             ($a:expr, $b:expr, $c:expr, $d:expr) => {{
                 $a = $a.wrapping_add($b);
-                $d = $d ^ $a;
+                $d ^= $a;
                 $d = $d.rotate_left(16);
 
                 $c = $c.wrapping_add($d);
-                $b = $b ^ $c;
+                $b ^= $c;
                 $b = $b.rotate_left(12);
 
                 $a = $a.wrapping_add($b);
-                $d = $d ^ $a;
+                $d ^= $a;
                 $d = $d.rotate_left(8);
 
                 $c = $c.wrapping_add($d);
-                $b = $b ^ $c;
+                $b ^= $c;
                 $b = $b.rotate_left(7);
             }};
         }
@@ -56,7 +56,7 @@ impl ChaCha20Inner {
         }
 
         let mut state = self.state;
-        for _ in 0..10 {
+        for _ in 0..R / 2 {
             // column round
             quarter_round_idx!(state, 0x0, 0x4, 0x8, 0xC);
             quarter_round_idx!(state, 0x1, 0x5, 0x9, 0xD);
@@ -78,20 +78,19 @@ impl ChaCha20Inner {
         state
     }
 
-    fn next_key(&mut self) -> [u8; 64] {
+    pub(crate) fn next_key(&mut self) -> [u8; 64] {
         let mut k = [0u8; 64];
-        LittleEndian::to_bytes(&mut k, &self.round20());
+        LittleEndian::to_bytes(&mut k, &self.round());
+        self.state[12] = self.state[12].wrapping_add(1);
         k
     }
 }
 
-impl Iterator for ChaCha20Inner {
+impl<const R: usize> Iterator for ChaChaInner<R> {
     type Item = u8;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.buffer_offset == 64 {
-            // increase counter
-            self.state[12] = self.state[12].wrapping_add(1);
             let next_key = self.next_key();
             self.buffer.copy_from_slice(&next_key);
             self.buffer_offset = 0;
@@ -103,13 +102,13 @@ impl Iterator for ChaCha20Inner {
 }
 
 pub struct ChaCha20 {
-    inner: ChaCha20Inner,
+    inner: ChaChaInner<20>,
 }
 
 impl ChaCha20 {
     pub fn new(key: &[u8; 32], nonce: &[u8; 12]) -> Self {
         ChaCha20 {
-            inner: ChaCha20Inner::new(key, nonce),
+            inner: ChaChaInner::new(key, nonce),
         }
     }
 
@@ -164,9 +163,16 @@ mod test {
         }
         let keystream = b"\x10:\xf1\x11\xc1\x8bT\x9d9$\x8f\xb0}`\xc2\x9a\x95\xd1\xdb\x88\xd8\x92\xf7\xb4\xafp\x9a_\xd4z\x9eK\xd5\xff\x9ae\x8d\xd5,p\x8b\xef\x1f\x0fb+7G\x04\x0f\xa3U\x13\x00\xb1\xf2\x93\x15\n\x88b\r_\xed\x89\xfb\x08\x00)\x17\xa5@\xb7\x83?\xf3\x98\x1d\x0ec\xc9p\xb2\xe7Qt\xad\xb9\xe6\x97/\xc5u\xc0\xa6<\xec\x80,\xf3\xe6\x1e\xb1\x9872v\xd8e\x94\x8f#~\x84\xa9t\xfd(\xb8\x9b\x12\xb8\xd9\x07\x90O\x9e\xd6";
         check_keystream(&key, &nonce, keystream);
+
+        let mut cp = ChaCha20::new(&key, &nonce);
+        let mut buf = [0u8; 128];
+        for i in 0..buf.len() {
+            cp.apply(&mut buf[i..i + 1]);
+        }
+        assert_eq!(keystream, &buf);
     }
 
-    const DATA_LENGTH: usize = 1024 * 256;
+    const DATA_LENGTH: usize = 1024;
 
     #[bench]
     fn bench_rc_chacha20(b: &mut Bencher) {

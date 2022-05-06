@@ -3,25 +3,18 @@ name = "primit"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-# libc = { version = "0.2", default-features = false }
-# sha2 = "*"
-# ring = "*"
-# md-5 = "*"
 
 [dev-dependencies]
-# hex = "*"
+rand = "*"
 sha2 = "*"
 md-5 = "*"
-rand = "*"
-chacha20 = { version = "*" }
+chacha20 = "*"
 
 [profile.release]
 codegen-units = 1
 debug = false
 incremental = false
 lto = "fat"
-opt-level = 3
+opt-level = "s"
 panic = "abort"
