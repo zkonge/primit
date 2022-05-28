@@ -1,4 +1,4 @@
-use primit::cipher::chacha20::ChaCha20;
+use primit::cipher::chacha::ChaCha20;
 
 fn check_keystream(key: &[u8], nonce: &[u8], keystream: &[u8]) {
     let mut chacha = ChaCha20::new(key.try_into().unwrap(), nonce.try_into().unwrap());

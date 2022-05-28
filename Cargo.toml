@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+getrandom = { version = "0.2.6", optional = true }
+
+[features]
+default = ["system-random"]
+system-random = ["getrandom"]
 
 [dev-dependencies]
 rand = "*"
@@ -16,5 +21,5 @@ codegen-units = 1
 debug = true
 incremental = false
 lto = "fat"
-opt-level = "s"
+opt-level = "z"
 panic = "abort"

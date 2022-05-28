@@ -3,7 +3,7 @@
 
 extern crate test;
 
-use primit::cipher::chacha20::ChaCha20;
+use primit::cipher::chacha::ChaCha20;
 use test::Bencher;
 
 const DATA_LENGTH: usize = 1024 * 256;
