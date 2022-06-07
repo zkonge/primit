@@ -1,7 +1,7 @@
 pub mod md5;
 pub mod sha256;
 
-//Merkle-Damgård structure
+// Merkle-Damgård structure
 
 // use crate::util::endian::EndianConvertion;
 

@@ -11,10 +11,10 @@ default = ["system-random"]
 system-random = ["getrandom"]
 
 [dev-dependencies]
-rand = "*"
 sha2 = "*"
 md-5 = "*"
 chacha20 = "*"
+aes = "*"
 
 [profile.release]
 codegen-units = 1

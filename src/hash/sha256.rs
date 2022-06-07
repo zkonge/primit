@@ -163,7 +163,3 @@ pub fn sha256(data: &[u8]) -> [u8; SHA256::LENGTH] {
     h.update(data);
     h.digest()
 }
-
-#[cfg(test)]
-mod test {
-}

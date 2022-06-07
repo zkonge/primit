@@ -10,6 +10,8 @@ pub(crate) struct ChaChaInner<const R: usize>([u32; 16]);
 
 impl<const R: usize> ChaChaInner<R> {
     pub(crate) fn new(key: &[u8; 32], nonce: &[u8; 12]) -> Self {
+        debug_assert!(R % 2 == 0);
+
         let mut state = [0; 16];
 
         state[0..4].copy_from_slice(&INIT_VECTOR);
@@ -21,32 +23,26 @@ impl<const R: usize> ChaChaInner<R> {
     }
 
     fn round(&self) -> [u32; 16] {
-        fn quarter_round_idx(e: &mut [u32; 16], a: usize, b: usize, c: usize, d: usize) {
-            macro_rules! quarter_round {
-                ($a:expr, $b:expr, $c:expr, $d:expr) => {{
-                    $a = $a.wrapping_add($b);
-                    $d ^= $a;
-                    $d = $d.rotate_left(16);
+        fn quarter_round_idx(e: &mut [u32; 16], ai: usize, bi: usize, ci: usize, di: usize) {
+            let [mut a, mut b, mut c, mut d] = [e[ai], e[bi], e[ci], e[di]];
 
-                    $c = $c.wrapping_add($d);
-                    $b ^= $c;
-                    $b = $b.rotate_left(12);
+            a = a.wrapping_add(b);
+            d ^= a;
+            d = d.rotate_left(16);
 
-                    $a = $a.wrapping_add($b);
-                    $d ^= $a;
-                    $d = $d.rotate_left(8);
+            c = c.wrapping_add(d);
+            b ^= c;
+            b = b.rotate_left(12);
 
-                    $c = $c.wrapping_add($d);
-                    $b ^= $c;
-                    $b = $b.rotate_left(7);
-                }};
-            }
-            macro_rules! quarter_round_idx {
-                ($e:expr, $a:expr, $b:expr, $c:expr, $d:expr) => {
-                    quarter_round!($e[$a], $e[$b], $e[$c], $e[$d])
-                };
-            }
-            quarter_round_idx!(e, a, b, c, d);
+            a = a.wrapping_add(b);
+            d ^= a;
+            d = d.rotate_left(8);
+
+            c = c.wrapping_add(d);
+            b ^= c;
+            b = b.rotate_left(7);
+
+            [e[ai], e[bi], e[ci], e[di]] = [a, b, c, d];
         }
 
         let mut state = self.0;
@@ -74,10 +70,8 @@ impl<const R: usize> ChaChaInner<R> {
 
     pub(crate) fn next_key(&mut self) -> [u8; 64] {
         let mut k = [0u8; 64];
-        let carry;
-        (self.0[12], carry) = self.0[12].carrying_add(1, false);
-        self.0[13] = self.0[13].wrapping_add(carry as u32);
         LittleEndian::to_bytes(&mut k, &self.round());
+        self.0[12] = self.0[12].wrapping_add(1);
         k
     }
 }
@@ -92,6 +86,7 @@ impl ChaCha20 {
     pub fn new(key: &[u8; 32], nonce: &[u8; 12]) -> Self {
         let mut inner = ChaChaInner::new(key, nonce);
         let buffer = inner.next_key();
+
         ChaCha20 {
             inner,
             buffer,
@@ -102,12 +97,14 @@ impl ChaCha20 {
     pub fn apply(&mut self, data: &mut [u8]) {
         xor(data, &self.buffer[self.buffer_offset..]);
 
-        if data.len() < self.buffer.len() - self.buffer_offset {
+        // buffer still have unused key
+        if data.len() < self.buffer[self.buffer_offset..].len() {
             self.buffer_offset += data.len();
             return;
         }
 
-        let (chunks, remain) = data[self.buffer_offset..].as_chunks_mut::<64>();
+        // no key left in buffer
+        let (chunks, remain) = data[64 - self.buffer_offset..].as_chunks_mut::<64>();
         for chunk in chunks {
             xor(chunk, &self.inner.next_key());
         }
@@ -115,5 +112,21 @@ impl ChaCha20 {
 
         xor(remain, &self.buffer);
         self.buffer_offset = remain.len();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::utils::hex::encode_fix;
+
+    use super::*;
+
+    #[test]
+    fn output() {
+        let mut data = [0u8; 128];
+        let mut cp = ChaCha20::new(&[0u8; 32], &[0u8; 12]);
+        cp.apply(&mut data);
+        let r = encode_fix(&data);
+        println!("{}", String::from_utf8_lossy(&r));
     }
 }

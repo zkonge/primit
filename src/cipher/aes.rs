@@ -1,4 +1,7 @@
-use crate::utils::xor::xor;
+use crate::utils::{
+    endian::{BigEndian, EndianConvertion},
+    xor::xor,
+};
 
 const SBOX: [u8; 256] = [
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
@@ -40,110 +43,147 @@ const RSBOX: [u8; 256] = [
 
 const RCONSTANT: [u8; 10] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36];
 
-fn gmul(mut a: u8, mut b: u8) -> u8 {
-    let mut p = 0;
-    let mut hi_bit_set;
-    for _ in 0..8 {
-        if (b & 1) == 1 {
-            p ^= a;
-        }
-        hi_bit_set = a & 0x80;
-        a <<= 1;
-        if hi_bit_set == 0x80 {
-            a ^= 0x1b;
-        }
-        b >>= 1;
+#[inline(always)]
+fn byte(i: u32, n: u32) -> u8 {
+    (i >> ((3 - n) * 8)) as u8
+}
+
+#[inline(always)]
+fn sub_byte(x: u32, subtle_box: &[u8; 256]) -> u32 {
+    // endian is not matter
+    let [a, b, c, d] = x.to_ne_bytes();
+    u32::from_ne_bytes([
+        subtle_box[a as usize],
+        subtle_box[b as usize],
+        subtle_box[c as usize],
+        subtle_box[d as usize],
+    ])
+}
+
+fn sub_bytes(data: &mut [u32; 4]) {
+    data.iter_mut().for_each(|x| {
+        *x = sub_byte(*x, &SBOX);
+    });
+}
+
+fn inv_sub_bytes(data: &mut [u32; 4]) {
+    data.iter_mut().for_each(|x| {
+        *x = sub_byte(*x, &RSBOX);
+    });
+}
+
+fn shift_rows(data: &mut [u32; 4]) {
+    *data = [
+        u32::from_be_bytes([
+            byte(data[0], 0),
+            byte(data[1], 1),
+            byte(data[2], 2),
+            byte(data[3], 3),
+        ]),
+        u32::from_be_bytes([
+            byte(data[1], 0),
+            byte(data[2], 1),
+            byte(data[3], 2),
+            byte(data[0], 3),
+        ]),
+        u32::from_be_bytes([
+            byte(data[2], 0),
+            byte(data[3], 1),
+            byte(data[0], 2),
+            byte(data[1], 3),
+        ]),
+        u32::from_be_bytes([
+            byte(data[3], 0),
+            byte(data[0], 1),
+            byte(data[1], 2),
+            byte(data[2], 3),
+        ]),
+    ];
+}
+
+fn inv_shift_rows(data: &mut [u32; 4]) {
+    *data = [
+        u32::from_be_bytes([
+            byte(data[0], 0),
+            byte(data[3], 1),
+            byte(data[2], 2),
+            byte(data[1], 3),
+        ]),
+        u32::from_be_bytes([
+            byte(data[1], 0),
+            byte(data[0], 1),
+            byte(data[3], 2),
+            byte(data[2], 3),
+        ]),
+        u32::from_be_bytes([
+            byte(data[2], 0),
+            byte(data[1], 1),
+            byte(data[0], 2),
+            byte(data[3], 3),
+        ]),
+        u32::from_be_bytes([
+            byte(data[3], 0),
+            byte(data[2], 1),
+            byte(data[1], 2),
+            byte(data[0], 3),
+        ]),
+    ];
+}
+
+fn gf_poly_mul2(x: u32) -> u32 {
+    ((x & 0x7f7f7f7f) << 1) ^ (((x & 0x80808080) >> 7) * 0x1b)
+}
+
+fn mix_column(x: u32) -> u32 {
+    let x2 = gf_poly_mul2(x);
+    x2 ^ (x ^ x2).rotate_right(24) ^ x.rotate_right(16) ^ x.rotate_right(8)
+}
+
+fn inv_mix_column(x: u32) -> u32 {
+    let x2 = gf_poly_mul2(x);
+    let x4 = gf_poly_mul2(x2);
+    let x9 = x ^ gf_poly_mul2(x4);
+    let x11 = x2 ^ x9;
+    let x13 = x4 ^ x9;
+
+    x ^ x2 ^ x13 ^ x11.rotate_right(24) ^ x13.rotate_right(16) ^ x9.rotate_right(8)
+}
+
+fn mix_columns(data: &mut [u32; 4]) {
+    for x in data.iter_mut() {
+        *x = mix_column(*x);
     }
-    p
 }
 
-fn sub_bytes(data: &mut [u8; 16]) {
-    data.iter_mut().for_each(|x| *x = SBOX[*x as usize]);
-}
-fn inv_sub_bytes(data: &mut [u8; 16]) {
-    data.iter_mut().for_each(|x| *x = RSBOX[*x as usize]);
-}
-
-fn shift_rows(data: &mut [u8; 16]) {
-    let [a, b, c, d] = [data[1], data[5], data[9], data[13]];
-    [data[1], data[5], data[9], data[13]] = [b, c, d, a];
-
-    let [a, b, c, d] = [data[2], data[6], data[10], data[14]];
-    [data[2], data[6], data[10], data[14]] = [c, d, a, b];
-
-    let [a, b, c, d] = [data[3], data[7], data[11], data[15]];
-    [data[3], data[7], data[11], data[15]] = [d, a, b, c];
-}
-fn inv_shift_rows(data: &mut [u8; 16]) {
-    let [a, b, c, d] = [data[1], data[5], data[9], data[13]];
-    [data[1], data[5], data[9], data[13]] = [d, a, b, c];
-
-    let [a, b, c, d] = [data[2], data[6], data[10], data[14]];
-    [data[2], data[6], data[10], data[14]] = [c, d, a, b];
-
-    let [a, b, c, d] = [data[3], data[7], data[11], data[15]];
-    [data[3], data[7], data[11], data[15]] = [b, c, d, a];
-}
-
-fn mix_columns(data: &mut [u8; 16]) {
-    // https://en.wikipedia.org/wiki/Rijndael_MixColumns
-    for r in data.as_chunks_mut::<4>().0 {
-        let mut a = [0u8; 4];
-        let mut b = [0u8; 4];
-        for c in 0..4 {
-            a[c] = r[c];
-            b[c] = r[c] << 1;
-            if r[c] & 0x80 == 0x80 {
-                b[c] ^= 0x1b
-            }
-        }
-        r[0] = b[0] ^ a[3] ^ a[2] ^ b[1] ^ a[1];
-        r[1] = b[1] ^ a[0] ^ a[3] ^ b[2] ^ a[2];
-        r[2] = b[2] ^ a[1] ^ a[0] ^ b[3] ^ a[3];
-        r[3] = b[3] ^ a[2] ^ a[1] ^ b[0] ^ a[0];
-    }
-}
-fn inv_mix_columns(data: &mut [u8; 16]) {
-    for r in data.as_chunks_mut::<4>().0 {
-        let mut a = [0u8; 4];
-        a.copy_from_slice(r);
-        r[0] = gmul(a[0], 14) ^ gmul(a[3], 9) ^ gmul(a[2], 13) ^ gmul(a[1], 11);
-        r[1] = gmul(a[1], 14) ^ gmul(a[0], 9) ^ gmul(a[3], 13) ^ gmul(a[2], 11);
-        r[2] = gmul(a[2], 14) ^ gmul(a[1], 9) ^ gmul(a[0], 13) ^ gmul(a[3], 11);
-        r[3] = gmul(a[3], 14) ^ gmul(a[2], 9) ^ gmul(a[1], 13) ^ gmul(a[0], 11);
+fn inv_mix_columns(data: &mut [u32; 4]) {
+    for x in data.iter_mut() {
+        *x = inv_mix_column(*x);
     }
 }
 
 pub struct AES128 {
-    round_key: [[u8; 16]; 11],
+    round_key: [[u32; 4]; 11],
 }
 
 impl AES128 {
     pub fn new(key: &[u8; 16]) -> Self {
-        let mut round_key = [[0u8; 16]; 11];
+        let mut round_key = [[0u32; 4]; 11];
 
-        round_key[0] = *key;
+        BigEndian::from_bytes(&mut round_key[0], key);
 
         for i in 0..round_key.len() - 1 {
             let (a, b) = (round_key[i], &mut round_key[i + 1]);
 
             // rot word, sub word
-            let mut temp: [u8; 4] = [
-                SBOX[a[13] as usize],
-                SBOX[a[14] as usize],
-                SBOX[a[15] as usize],
-                SBOX[a[12] as usize],
-            ];
+            let mut temp = sub_byte(a[3].rotate_left(8), &SBOX);
+
             // rconstant
-            temp[0] ^= RCONSTANT[i];
+            temp ^= (RCONSTANT[i] as u32) << 24;
 
             *b = a;
 
-            for chunk in b.as_chunks_mut::<4>().0 {
-                chunk[0] ^= temp[0];
-                chunk[1] ^= temp[1];
-                chunk[2] ^= temp[2];
-                chunk[3] ^= temp[3];
+            for chunk in b {
+                *chunk ^= temp;
                 temp = *chunk;
             }
         }
@@ -155,20 +195,23 @@ impl AES128 {
         let (first_key, keys) = keys.split_first().unwrap();
         let (last_key, keys) = keys.split_last().unwrap();
 
-        xor(data, first_key);
+        let blocks = &mut [0u32; 4];
+        BigEndian::from_bytes(blocks, data);
 
-        // println!("rnd:{}", String::from_utf8_lossy(&encode_fix(&data)));
+        xor(blocks, first_key);
 
         for key in keys {
-            sub_bytes(data);
-            shift_rows(data);
-            mix_columns(data);
-            xor(data, key);
+            sub_bytes(blocks);
+            shift_rows(blocks);
+            mix_columns(blocks);
+            xor(blocks, key);
         }
 
-        sub_bytes(data);
-        shift_rows(data);
-        xor(data, last_key);
+        sub_bytes(blocks);
+        shift_rows(blocks);
+        xor(blocks, last_key);
+
+        BigEndian::to_bytes(data, blocks);
     }
 
     pub fn decrypt(&self, data: &mut [u8; 16]) {
@@ -176,17 +219,22 @@ impl AES128 {
         let (first_key, keys) = keys.split_first().unwrap();
         let (last_key, keys) = keys.split_last().unwrap();
 
-        xor(data, last_key);
-        inv_shift_rows(data);
-        inv_sub_bytes(data);
+        let blocks = &mut [0u32; 4];
+        BigEndian::from_bytes(blocks, data);
+
+        xor(blocks, last_key);
+        inv_shift_rows(blocks);
+        inv_sub_bytes(blocks);
 
         for key in keys.iter().rev() {
-            xor(data, key);
-            inv_mix_columns(data);
-            inv_shift_rows(data);
-            inv_sub_bytes(data);
+            xor(blocks, key);
+            inv_mix_columns(blocks);
+            inv_shift_rows(blocks);
+            inv_sub_bytes(blocks);
         }
 
-        xor(data, first_key);
+        xor(blocks, first_key);
+
+        BigEndian::to_bytes(data, blocks);
     }
 }

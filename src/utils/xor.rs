@@ -1,3 +1,5 @@
-pub fn xor(output: &mut [u8], input: &[u8]) {
-    output.iter_mut().zip(input).for_each(|(o, i)| *o ^= i);
+use std::ops::BitXorAssign;
+
+pub fn xor<T: BitXorAssign + Copy>(output: &mut [T], input: &[T]) {
+    output.iter_mut().zip(input).for_each(|(o, i)| *o ^= *i);
 }
