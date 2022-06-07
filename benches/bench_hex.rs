@@ -3,8 +3,9 @@
 
 extern crate test;
 
-use primit::utils::hex::{decode, encode};
 use test::{black_box, Bencher};
+
+use primit::utils::hex::{decode, encode};
 
 const DATA_LENGTH: usize = 1024 * 256;
 
@@ -14,7 +15,7 @@ fn bench_encode(b: &mut Bencher) {
     let data = black_box([0u8; DATA_LENGTH]);
     let mut result = black_box([0u8; DATA_LENGTH * 2]);
 
-    b.iter(|| encode(&data, &mut result).unwrap());
+    b.iter(|| encode(&mut result, &data).unwrap());
 }
 
 #[bench]
@@ -23,5 +24,5 @@ fn bench_decode(b: &mut Bencher) {
     let data = black_box([0x30u8; DATA_LENGTH * 2]);
     let mut result = black_box([0u8; DATA_LENGTH]);
 
-    b.iter(|| decode(&data, &mut result).unwrap());
+    b.iter(|| decode(&mut result, &data).unwrap());
 }
