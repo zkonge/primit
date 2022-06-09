@@ -6,6 +6,7 @@ use crate::utils::{
 // "expand 32-byte k"
 const INIT_VECTOR: [u32; 4] = [0x61707865, 0x3320646e, 0x79622d32, 0x6b206574];
 
+#[derive(Debug)]
 pub(crate) struct ChaChaInner<const R: usize>([u32; 16]);
 
 impl<const R: usize> ChaChaInner<R> {
@@ -76,6 +77,7 @@ impl<const R: usize> ChaChaInner<R> {
     }
 }
 
+#[derive(Debug)]
 pub struct ChaCha20 {
     inner: ChaChaInner<20>,
     buffer: [u8; 64],

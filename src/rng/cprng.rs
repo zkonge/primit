@@ -2,6 +2,7 @@ use crate::cipher::chacha::ChaChaInner;
 
 use crate::rng::Rng;
 
+#[derive(Debug)]
 pub struct FastRng(ChaChaInner<8>);
 
 impl FastRng {

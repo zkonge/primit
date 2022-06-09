@@ -30,6 +30,7 @@ const K: [u32; 64] = [
 
 const INIT_VECTOR: [u32; STATE_SIZE] = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476];
 
+#[derive(Debug)]
 pub struct MD5 {
     count: u64,
     state: [u32; STATE_SIZE],

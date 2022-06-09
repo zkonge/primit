@@ -161,6 +161,7 @@ fn inv_mix_columns(data: &mut [u32; 4]) {
     }
 }
 
+#[derive(Debug)]
 pub struct AES128 {
     round_key: [[u32; 4]; 11],
 }
