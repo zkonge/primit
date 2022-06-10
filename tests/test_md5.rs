@@ -10,14 +10,12 @@ fn test_md5() {
     let mut rng = FastRng::new_from_seed(&[0u8; 32]);
 
     for l in 0..input.len() {
-        for _ in 0..512 {
-            rng.fill_bytes(&mut input[..l]);
+        rng.fill_bytes(&mut input[..l]);
 
-            let mut std_digest = Md5::new();
-            std_digest.update(&input[..l]);
-            let output = std_digest.finalize();
+        let mut std_digest = Md5::new();
+        std_digest.update(&input[..l]);
+        let output = std_digest.finalize();
 
-            assert_eq!(&md5(&input[..l]), output.as_slice());
-        }
+        assert_eq!(&md5(&input[..l]), output.as_slice());
     }
 }

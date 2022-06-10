@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-getrandom = { version = "0.2.6", optional = true }
+getrandom = { version = "0.2", optional = true }
 
 [features]
 default = ["system-random"]

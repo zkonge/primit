@@ -1,4 +1,4 @@
-// #![no_std]
+#![no_std]
 #![forbid(unsafe_code)]
 #![feature(test)]
 #![feature(inline_const)]

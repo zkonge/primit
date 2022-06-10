@@ -116,19 +116,3 @@ impl ChaCha20 {
         self.buffer_offset = remain.len();
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::utils::hex::encode_fix;
-
-    use super::*;
-
-    #[test]
-    fn output() {
-        let mut data = [0u8; 128];
-        let mut cp = ChaCha20::new(&[0u8; 32], &[0u8; 12]);
-        cp.apply(&mut data);
-        let r = encode_fix(&data);
-        println!("{}", String::from_utf8_lossy(&r));
-    }
-}

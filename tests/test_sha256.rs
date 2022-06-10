@@ -11,14 +11,12 @@ fn test_sha256_fuzz() {
     let mut rng = FastRng::new_from_seed(&[0u8; 32]);
 
     for l in 0..input.len() {
-        for _ in 0..512 {
-            rng.fill_bytes(&mut input[..l]);
+        rng.fill_bytes(&mut input[..l]);
 
-            let mut std_digest = Sha256::new();
-            std_digest.update(&input[..l]);
-            let output = std_digest.finalize();
+        let mut std_digest = Sha256::new();
+        std_digest.update(&input[..l]);
+        let output = std_digest.finalize();
 
-            assert_eq!(&sha256(&input[..l]), output.as_slice());
-        }
+        assert_eq!(&sha256(&input[..l]), output.as_slice());
     }
 }

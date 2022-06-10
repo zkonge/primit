@@ -1,4 +1,4 @@
-// pub mod ghash;
+pub mod ghash;
 pub mod poly1305;
 
 pub trait Mac<const KEY_LENGTH: usize, const MAC_LENGTH: usize> {

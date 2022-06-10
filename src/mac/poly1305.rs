@@ -1,7 +1,7 @@
 // https://cr.yp.to/mac/poly1305-20050329.pdf
 // https://github.com/floodyberry/poly1305-donna
 
-use std::convert::TryInto;
+use core::convert::TryInto;
 
 use crate::utils::endian::{EndianConvertion, LittleEndian};
 

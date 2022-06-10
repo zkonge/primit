@@ -1,737 +1,217 @@
-use core::mem;
-/// This is an implementaiton of GHASH as used in GCM [1].
-/// It is defined as GHASH(H, A, C), where H is a MAC key, A is authenticated data,
-/// and C is the ciphertext. GHASH can be used as a keyed MAC, if C is left empty.
-///
-/// In order to ensure constant time computation it uses the approach described in [2] section 5.2.
-///
-/// [1] - "The Galois/Counter Mode of Operation (GCM)" - David A. McGrew and John Viega
-///       <http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-spec.pdf>
-/// [2] - "Faster and Timing-Attack Resistant AES-GCM" - Emilia Käsper and Peter Schwabe
-///       <http://cryptojedi.org/papers/aesbs-20090616.pdf>
-use core::ops::BitXor;
+use core::{
+    num::Wrapping,
+    ops::{Add, Mul},
+};
 
 use super::Mac;
 
-// A struct representing an element in GF(2^128)
-// x^0 is the msb, while x^127 is the lsb
-#[derive(Clone, Copy)]
-pub struct Gf128(u128);
+fn mulx(block: &[u8; 16]) -> [u8; 16] {
+    let mut v = u128::from_le_bytes(*block);
+    let v_hi = v >> 127;
 
-impl Gf128 {
-    pub fn new(a: u32, b: u32, c: u32, d: u32) -> Gf128 {
-        Gf128(((d as u128) << 96) | ((c as u128) << 64) | ((b as u128) << 32) | (a as u128))
+    v <<= 1;
+    v ^= v_hi ^ (v_hi << 127) ^ (v_hi << 126) ^ (v_hi << 121);
+    v.to_le_bytes()
+}
+
+pub struct GHash(Polyval);
+
+impl Mac<16, 16> for GHash {
+    fn new(h: &[u8; 16]) -> Self {
+        let mut h = *h;
+        h.reverse();
+
+        GHash(Polyval::new(&mulx(&h)))
     }
 
-    pub fn from_bytes(bytes: &[u8; 16]) -> Gf128 {
-        Gf128(u128::from_be_bytes(*bytes))
+    fn update(&mut self, x: &[u8]) {
+        debug_assert_eq!(x.len(), 16);
+        let x: &mut [u8; 16] = &mut x.try_into().unwrap();
+        x.reverse();
+
+        self.0.update(x);
     }
 
-    pub fn to_bytes(&self) -> [u8; 16] {
-        self.0.to_be_bytes()
-    }
-
-    // Multiply the element by x modulo x^128
-    // This is equivalent to a rightshift in the bit representation
-    pub fn times_x(self) -> Gf128 {
-        Gf128(self.0 >> 1)
-    }
-
-    // Multiply the element by x modulo x^128 + x^7 + x^2 + x + 1
-    // This is equivalent to a rightshift, followed by an XOR iff the lsb was set,
-    // in the bit representation
-    pub fn times_x_reduce(self) -> Gf128 {
-        // let r = Gf128::new(0, 0, 0, 0b1110_0001 << 24);
-        let r = 0b1110_0001 << (96 + 24);
-        self.cond_xor(Gf128(r), self.times_x())
-    }
-
-    // Adds y, and multiplies with h using a precomputed array of the values h * x^0 to h * x^127
-    pub fn add_and_mul(&mut self, y: Gf128, hs: &[Gf128; 128]) {
-        *self = *self ^ y;
-        let mut x = mem::replace(self, Gf128::new(0, 0, 0, 0));
-
-        for &y in hs.iter().rev() {
-            *self = x.cond_xor(y, *self);
-            x = x.times_x();
-        }
-    }
-
-    // This XORs the value of y with x if the LSB of self is set, otherwise y is returned
-    pub fn cond_xor(self, x: Gf128, y: Gf128) -> Gf128 {
-        let lsb = 1;
-        let mask = if self.0 & lsb == lsb {
-            u128::MAX
-        } else {
-            u128::MIN
-        };
-        Gf128((x.0 & mask) ^ y.0)
+    fn finalize(self) -> [u8; 16] {
+        let mut output = self.0.finalize();
+        output.reverse();
+        output
     }
 }
 
-impl BitXor for Gf128 {
-    type Output = Gf128;
+struct Polyval {
+    h: U32x4,
+    s: U32x4,
+}
 
-    fn bitxor(self, rhs: Gf128) -> Gf128 {
-        Gf128(self.0 ^ rhs.0)
+impl Polyval {
+    fn new(h: &[u8; 16]) -> Self {
+        Self {
+            h: h.into(),
+            s: U32x4::default(),
+        }
     }
 }
 
-/// A structure representing the state of a GHASH computation
-#[derive(Copy, Clone)]
-pub struct Ghash {
-    hs: [Gf128; 128],
-    state: Gf128,
-    a_len: usize,
-    rest: Option<[u8; 16]>,
-    finished: bool,
-}
-
-/// A structure representing the state of a GHASH computation, after input for C was provided
-#[derive(Copy, Clone)]
-pub struct GhashWithC {
-    hs: [Gf128; 128],
-    state: Gf128,
-    a_len: usize,
-    c_len: usize,
-    rest: Option<[u8; 16]>,
-}
-
-fn update(
-    state: &mut Gf128,
-    len: &mut usize,
-    data: &[u8],
-    srest: &mut Option<[u8; 16]>,
-    hs: &[Gf128; 128],
-) {
-    let rest_len = *len % 16;
-    let data_len = data.len();
-    *len += data_len;
-
-    let data = match srest.take() {
-        None => data,
-        Some(mut rest) => {
-            if 16 - rest_len > data_len {
-                // copy_memory(data, &mut rest[rest_len..]);
-                rest[rest_len..].copy_from_slice(&data);
-                *srest = Some(rest);
-                return;
-            }
-
-            let (fill, data) = data.split_at(16 - rest_len);
-            // copy_memory(fill, &mut rest[rest_len..]);
-            rest[rest_len..].copy_from_slice(fill);
-            state.add_and_mul(Gf128::from_bytes(&rest), hs);
-            data
-        }
-    };
-
-    let (data, rest) = data.split_at(data_len - data_len % 16);
-
-    for chunk in data.as_chunks::<16>().0 {
-        let x = Gf128::from_bytes(chunk);
-        state.add_and_mul(x, hs);
+impl Polyval {
+    fn update(&mut self, x: &[u8; 16]) {
+        let x = U32x4::from(x);
+        self.s = (self.s + x) * self.h;
     }
 
-    if rest.len() != 0 {
-        let mut tmp = [0; 16];
-        // copy_memory(rest, &mut tmp);
-        tmp[..rest.len()].copy_from_slice(rest);
-        *srest = Some(tmp);
+    fn finalize(self) -> [u8; 16] {
+        let mut block = [0u8; 16];
+
+        for (chunk, i) in block
+            .chunks_mut(4)
+            .zip(&[self.s.0, self.s.1, self.s.2, self.s.3])
+        {
+            chunk.copy_from_slice(&i.to_le_bytes());
+        }
+
+        block
     }
 }
 
-impl Ghash {
-    /// Creates a new GHASH state, with `h` as the key
-    #[inline]
-    pub fn new(h: &[u8; 16]) -> Ghash {
-        let mut table = [Gf128::new(0, 0, 0, 0); 128];
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+struct U32x4(u32, u32, u32, u32);
 
-        // Precompute values for h * x^0 to h * x^127
-        let mut h = Gf128::from_bytes(h);
-        for poly in table.iter_mut() {
-            *poly = h;
-            h = h.times_x_reduce();
-        }
-
-        Ghash {
-            hs: table,
-            state: Gf128::new(0, 0, 0, 0),
-            a_len: 0,
-            rest: None,
-            finished: false,
-        }
-    }
-
-    fn flush(&mut self) {
-        for rest in self.rest.take().iter() {
-            self.state.add_and_mul(Gf128::from_bytes(rest), &self.hs);
-        }
-    }
-
-    /// Feeds data for GHASH's A input
-    #[inline]
-    pub fn input_a(mut self, a: &[u8]) -> Ghash {
-        assert!(!self.finished);
-        update(
-            &mut self.state,
-            &mut self.a_len,
-            a,
-            &mut self.rest,
-            &self.hs,
-        );
-        self
-    }
-
-    /// Feeds data for GHASH's C input
-    #[inline]
-    pub fn input_c(mut self, c: &[u8]) -> GhashWithC {
-        assert!(!self.finished);
-        self.flush();
-
-        let mut c_len = 0;
-        update(&mut self.state, &mut c_len, c, &mut self.rest, &self.hs);
-
-        let Ghash {
-            hs,
-            state,
-            a_len,
-            rest,
-            ..
-        } = self;
-        GhashWithC {
-            hs: hs,
-            state: state,
-            a_len: a_len,
-            c_len: c_len,
-            rest: rest,
-        }
-    }
-
-    /// Retrieve the digest result
-    #[inline]
-    pub fn result(mut self) -> [u8; 16] {
-        if !self.finished {
-            self.flush();
-
-            let a_len = self.a_len as u64 * 8;
-            let lens = Gf128::new(0, 0, a_len as u32, (a_len >> 32) as u32);
-            self.state.add_and_mul(lens, &self.hs);
-
-            self.finished = true;
-        }
-
-        self.state.to_bytes()
+impl From<&[u8; 16]> for U32x4 {
+    fn from(bytes: &[u8; 16]) -> U32x4 {
+        U32x4(
+            u32::from_le_bytes(bytes[..4].try_into().unwrap()),
+            u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
+            u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
+            u32::from_le_bytes(bytes[12..].try_into().unwrap()),
+        )
     }
 }
 
-impl GhashWithC {
-    /// Feeds data for GHASH's C input
-    #[inline]
-    pub fn input_c(mut self, c: &[u8]) -> GhashWithC {
-        update(
-            &mut self.state,
-            &mut self.c_len,
-            c,
-            &mut self.rest,
-            &self.hs,
-        );
-        self
-    }
+impl Add for U32x4 {
+    type Output = Self;
 
-    /// Retrieve the digest result
-    #[inline]
-    pub fn result(mut self) -> [u8; 16] {
-        for rest in self.rest.take().iter() {
-            self.state.add_and_mul(Gf128::from_bytes(rest), &self.hs);
-        }
-
-        let a_len = self.a_len as u64 * 8;
-        let c_len = self.c_len as u64 * 8;
-        let lens = Gf128::new(
-            c_len as u32,
-            (c_len >> 32) as u32,
-            a_len as u32,
-            (a_len >> 32) as u32,
-        );
-        self.state.add_and_mul(lens, &self.hs);
-
-        self.state.to_bytes()
+    fn add(self, rhs: Self) -> Self::Output {
+        U32x4(
+            self.0 ^ rhs.0,
+            self.1 ^ rhs.1,
+            self.2 ^ rhs.2,
+            self.3 ^ rhs.3,
+        )
     }
 }
 
-impl Mac<16> for Ghash {
-    fn input(&mut self, data: &[u8]) {
-        assert!(!self.finished);
-        update(
-            &mut self.state,
-            &mut self.a_len,
-            data,
-            &mut self.rest,
-            &self.hs,
-        );
-    }
+impl Mul for U32x4 {
+    type Output = Self;
 
-    fn reset(&mut self) {
-        self.state = Gf128::new(0, 0, 0, 0);
-        self.a_len = 0;
-        self.rest = None;
-        self.finished = false;
-    }
+    fn mul(self, rhs: Self) -> Self {
+        let hw = [self.0, self.1, self.2, self.3];
+        let yw = [rhs.0, rhs.1, rhs.2, rhs.3];
+        let hwr = [hw[0], hw[1], hw[2], hw[3]].map(u32::reverse_bits);
 
-    fn result(&mut self) -> [u8; 16] {
-        let mut mac = [0u8; 16];
-        self.raw_result(&mut mac[..]);
-        mac
-    }
+        let mut a = [0u32; 18];
 
-    fn raw_result(&mut self, output: &mut [u8]) {
-        assert!(output.len() >= 16);
-        if !self.finished {
-            self.flush();
+        a[0] = yw[0];
+        a[1] = yw[1];
+        a[2] = yw[2];
+        a[3] = yw[3];
+        a[4] = a[0] ^ a[1];
+        a[5] = a[2] ^ a[3];
+        a[6] = a[0] ^ a[2];
+        a[7] = a[1] ^ a[3];
+        a[8] = a[6] ^ a[7];
+        a[9] = yw[0].reverse_bits();
+        a[10] = yw[1].reverse_bits();
+        a[11] = yw[2].reverse_bits();
+        a[12] = yw[3].reverse_bits();
+        a[13] = a[9] ^ a[10];
+        a[14] = a[11] ^ a[12];
+        a[15] = a[9] ^ a[11];
+        a[16] = a[10] ^ a[12];
+        a[17] = a[15] ^ a[16];
 
-            let a_len = self.a_len as u64 * 8;
-            let lens = Gf128::new(0, 0, a_len as u32, (a_len >> 32) as u32);
-            self.state.add_and_mul(lens, &self.hs);
+        let mut b = [0u32; 18];
 
-            self.finished = true;
+        b[0] = hw[0];
+        b[1] = hw[1];
+        b[2] = hw[2];
+        b[3] = hw[3];
+        b[4] = b[0] ^ b[1];
+        b[5] = b[2] ^ b[3];
+        b[6] = b[0] ^ b[2];
+        b[7] = b[1] ^ b[3];
+        b[8] = b[6] ^ b[7];
+        b[9] = hwr[0];
+        b[10] = hwr[1];
+        b[11] = hwr[2];
+        b[12] = hwr[3];
+        b[13] = b[9] ^ b[10];
+        b[14] = b[11] ^ b[12];
+        b[15] = b[9] ^ b[11];
+        b[16] = b[10] ^ b[12];
+        b[17] = b[15] ^ b[16];
+
+        let mut c = [0u32; 18];
+
+        for i in 0..18 {
+            c[i] = bmul32(a[i], b[i]);
         }
 
-        output[..16].copy_from_slice(&self.state.to_bytes());
-    }
+        c[4] ^= c[0] ^ c[1];
+        c[5] ^= c[2] ^ c[3];
+        c[8] ^= c[6] ^ c[7];
 
-    fn output_bytes(&self) -> usize {
-        16
+        c[13] ^= c[9] ^ c[10];
+        c[14] ^= c[11] ^ c[12];
+        c[17] ^= c[15] ^ c[16];
+
+        let mut zw = [0u32; 8];
+
+        zw[0] = c[0];
+        zw[1] = c[4] ^ c[9].reverse_bits() >> 1;
+        zw[2] = c[1] ^ c[0] ^ c[2] ^ c[6] ^ c[13].reverse_bits() >> 1;
+        zw[3] = c[4] ^ c[5] ^ c[8] ^ (c[10] ^ c[9] ^ c[11] ^ c[15]).reverse_bits() >> 1;
+        zw[4] = c[2] ^ c[1] ^ c[3] ^ c[7] ^ (c[13] ^ c[14] ^ c[17]).reverse_bits() >> 1;
+        zw[5] = c[5] ^ (c[11] ^ c[10] ^ c[12] ^ c[16]).reverse_bits() >> 1;
+        zw[6] = c[3] ^ c[14].reverse_bits() >> 1;
+        zw[7] = c[12].reverse_bits() >> 1;
+
+        for i in 0..4 {
+            let lw = zw[i];
+            zw[i + 4] ^= lw ^ (lw >> 1) ^ (lw >> 2) ^ (lw >> 7);
+            zw[i + 3] ^= (lw << 31) ^ (lw << 30) ^ (lw << 25);
+        }
+
+        U32x4(zw[4], zw[5], zw[6], zw[7])
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::{Gf128, Ghash};
+fn bmul32(x: u32, y: u32) -> u32 {
+    let x0 = Wrapping(x & 0x1111_1111);
+    let x1 = Wrapping(x & 0x2222_2222);
+    let x2 = Wrapping(x & 0x4444_4444);
+    let x3 = Wrapping(x & 0x8888_8888);
+    let y0 = Wrapping(y & 0x1111_1111);
+    let y1 = Wrapping(y & 0x2222_2222);
+    let y2 = Wrapping(y & 0x4444_4444);
+    let y3 = Wrapping(y & 0x8888_8888);
 
-    // Test cases from:
-    // <http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-spec.pdf>
-    static CASES: &'static [(&'static [u8], &'static [u8], &'static [u8], &'static [u8])] = &[
-        // Format: (H, A, C, GHASH(H, A, C))
+    let mut z0 = ((x0 * y0) ^ (x1 * y3) ^ (x2 * y2) ^ (x3 * y1)).0;
+    let mut z1 = ((x0 * y1) ^ (x1 * y0) ^ (x2 * y3) ^ (x3 * y2)).0;
+    let mut z2 = ((x0 * y2) ^ (x1 * y1) ^ (x2 * y0) ^ (x3 * y3)).0;
+    let mut z3 = ((x0 * y3) ^ (x1 * y2) ^ (x2 * y1) ^ (x3 * y0)).0;
 
-        // Test 1
-        (
-            &[
-                0x66, 0xe9, 0x4b, 0xd4, 0xef, 0x8a, 0x2c, 0x3b, 0x88, 0x4c, 0xfa, 0x59, 0xca, 0x34,
-                0x2b, 0x2e,
-            ],
-            &[],
-            &[],
-            &[
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00,
-            ],
-        ),
-        // Test 2
-        (
-            &[
-                0x66, 0xe9, 0x4b, 0xd4, 0xef, 0x8a, 0x2c, 0x3b, 0x88, 0x4c, 0xfa, 0x59, 0xca, 0x34,
-                0x2b, 0x2e,
-            ],
-            &[],
-            &[
-                0x03, 0x88, 0xda, 0xce, 0x60, 0xb6, 0xa3, 0x92, 0xf3, 0x28, 0xc2, 0xb9, 0x71, 0xb2,
-                0xfe, 0x78,
-            ],
-            &[
-                0xf3, 0x8c, 0xbb, 0x1a, 0xd6, 0x92, 0x23, 0xdc, 0xc3, 0x45, 0x7a, 0xe5, 0xb6, 0xb0,
-                0xf8, 0x85,
-            ],
-        ),
-        // Test 3
-        (
-            &[
-                0xb8, 0x3b, 0x53, 0x37, 0x08, 0xbf, 0x53, 0x5d, 0x0a, 0xa6, 0xe5, 0x29, 0x80, 0xd5,
-                0x3b, 0x78,
-            ],
-            &[],
-            &[
-                0x42, 0x83, 0x1e, 0xc2, 0x21, 0x77, 0x74, 0x24, 0x4b, 0x72, 0x21, 0xb7, 0x84, 0xd0,
-                0xd4, 0x9c, 0xe3, 0xaa, 0x21, 0x2f, 0x2c, 0x02, 0xa4, 0xe0, 0x35, 0xc1, 0x7e, 0x23,
-                0x29, 0xac, 0xa1, 0x2e, 0x21, 0xd5, 0x14, 0xb2, 0x54, 0x66, 0x93, 0x1c, 0x7d, 0x8f,
-                0x6a, 0x5a, 0xac, 0x84, 0xaa, 0x05, 0x1b, 0xa3, 0x0b, 0x39, 0x6a, 0x0a, 0xac, 0x97,
-                0x3d, 0x58, 0xe0, 0x91, 0x47, 0x3f, 0x59, 0x85,
-            ],
-            &[
-                0x7f, 0x1b, 0x32, 0xb8, 0x1b, 0x82, 0x0d, 0x02, 0x61, 0x4f, 0x88, 0x95, 0xac, 0x1d,
-                0x4e, 0xac,
-            ],
-        ),
-        // Test 4
-        (
-            &[
-                0xb8, 0x3b, 0x53, 0x37, 0x08, 0xbf, 0x53, 0x5d, 0x0a, 0xa6, 0xe5, 0x29, 0x80, 0xd5,
-                0x3b, 0x78,
-            ],
-            &[
-                0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad, 0xbe, 0xef, 0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad,
-                0xbe, 0xef, 0xab, 0xad, 0xda, 0xd2,
-            ],
-            &[
-                0x42, 0x83, 0x1e, 0xc2, 0x21, 0x77, 0x74, 0x24, 0x4b, 0x72, 0x21, 0xb7, 0x84, 0xd0,
-                0xd4, 0x9c, 0xe3, 0xaa, 0x21, 0x2f, 0x2c, 0x02, 0xa4, 0xe0, 0x35, 0xc1, 0x7e, 0x23,
-                0x29, 0xac, 0xa1, 0x2e, 0x21, 0xd5, 0x14, 0xb2, 0x54, 0x66, 0x93, 0x1c, 0x7d, 0x8f,
-                0x6a, 0x5a, 0xac, 0x84, 0xaa, 0x05, 0x1b, 0xa3, 0x0b, 0x39, 0x6a, 0x0a, 0xac, 0x97,
-                0x3d, 0x58, 0xe0, 0x91,
-            ],
-            &[
-                0x69, 0x8e, 0x57, 0xf7, 0x0e, 0x6e, 0xcc, 0x7f, 0xd9, 0x46, 0x3b, 0x72, 0x60, 0xa9,
-                0xae, 0x5f,
-            ],
-        ),
-        // Test 5
-        (
-            &[
-                0xb8, 0x3b, 0x53, 0x37, 0x08, 0xbf, 0x53, 0x5d, 0x0a, 0xa6, 0xe5, 0x29, 0x80, 0xd5,
-                0x3b, 0x78,
-            ],
-            &[
-                0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad, 0xbe, 0xef, 0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad,
-                0xbe, 0xef, 0xab, 0xad, 0xda, 0xd2,
-            ],
-            &[
-                0x61, 0x35, 0x3b, 0x4c, 0x28, 0x06, 0x93, 0x4a, 0x77, 0x7f, 0xf5, 0x1f, 0xa2, 0x2a,
-                0x47, 0x55, 0x69, 0x9b, 0x2a, 0x71, 0x4f, 0xcd, 0xc6, 0xf8, 0x37, 0x66, 0xe5, 0xf9,
-                0x7b, 0x6c, 0x74, 0x23, 0x73, 0x80, 0x69, 0x00, 0xe4, 0x9f, 0x24, 0xb2, 0x2b, 0x09,
-                0x75, 0x44, 0xd4, 0x89, 0x6b, 0x42, 0x49, 0x89, 0xb5, 0xe1, 0xeb, 0xac, 0x0f, 0x07,
-                0xc2, 0x3f, 0x45, 0x98,
-            ],
-            &[
-                0xdf, 0x58, 0x6b, 0xb4, 0xc2, 0x49, 0xb9, 0x2c, 0xb6, 0x92, 0x28, 0x77, 0xe4, 0x44,
-                0xd3, 0x7b,
-            ],
-        ),
-        // Test 6
-        (
-            &[
-                0xb8, 0x3b, 0x53, 0x37, 0x08, 0xbf, 0x53, 0x5d, 0x0a, 0xa6, 0xe5, 0x29, 0x80, 0xd5,
-                0x3b, 0x78,
-            ],
-            &[
-                0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad, 0xbe, 0xef, 0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad,
-                0xbe, 0xef, 0xab, 0xad, 0xda, 0xd2,
-            ],
-            &[
-                0x8c, 0xe2, 0x49, 0x98, 0x62, 0x56, 0x15, 0xb6, 0x03, 0xa0, 0x33, 0xac, 0xa1, 0x3f,
-                0xb8, 0x94, 0xbe, 0x91, 0x12, 0xa5, 0xc3, 0xa2, 0x11, 0xa8, 0xba, 0x26, 0x2a, 0x3c,
-                0xca, 0x7e, 0x2c, 0xa7, 0x01, 0xe4, 0xa9, 0xa4, 0xfb, 0xa4, 0x3c, 0x90, 0xcc, 0xdc,
-                0xb2, 0x81, 0xd4, 0x8c, 0x7c, 0x6f, 0xd6, 0x28, 0x75, 0xd2, 0xac, 0xa4, 0x17, 0x03,
-                0x4c, 0x34, 0xae, 0xe5,
-            ],
-            &[
-                0x1c, 0x5a, 0xfe, 0x97, 0x60, 0xd3, 0x93, 0x2f, 0x3c, 0x9a, 0x87, 0x8a, 0xac, 0x3d,
-                0xc3, 0xde,
-            ],
-        ),
-        // Test 7
-        (
-            &[
-                0xaa, 0xe0, 0x69, 0x92, 0xac, 0xbf, 0x52, 0xa3, 0xe8, 0xf4, 0xa9, 0x6e, 0xc9, 0x30,
-                0x0b, 0xd7,
-            ],
-            &[],
-            &[],
-            &[
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00,
-            ],
-        ),
-        // Test 8
-        (
-            &[
-                0xaa, 0xe0, 0x69, 0x92, 0xac, 0xbf, 0x52, 0xa3, 0xe8, 0xf4, 0xa9, 0x6e, 0xc9, 0x30,
-                0x0b, 0xd7,
-            ],
-            &[],
-            &[
-                0x98, 0xe7, 0x24, 0x7c, 0x07, 0xf0, 0xfe, 0x41, 0x1c, 0x26, 0x7e, 0x43, 0x84, 0xb0,
-                0xf6, 0x00,
-            ],
-            &[
-                0xe2, 0xc6, 0x3f, 0x0a, 0xc4, 0x4a, 0xd0, 0xe0, 0x2e, 0xfa, 0x05, 0xab, 0x67, 0x43,
-                0xd4, 0xce,
-            ],
-        ),
-        // Test 9
-        (
-            &[
-                0x46, 0x69, 0x23, 0xec, 0x9a, 0xe6, 0x82, 0x21, 0x4f, 0x2c, 0x08, 0x2b, 0xad, 0xb3,
-                0x92, 0x49,
-            ],
-            &[],
-            &[
-                0x39, 0x80, 0xca, 0x0b, 0x3c, 0x00, 0xe8, 0x41, 0xeb, 0x06, 0xfa, 0xc4, 0x87, 0x2a,
-                0x27, 0x57, 0x85, 0x9e, 0x1c, 0xea, 0xa6, 0xef, 0xd9, 0x84, 0x62, 0x85, 0x93, 0xb4,
-                0x0c, 0xa1, 0xe1, 0x9c, 0x7d, 0x77, 0x3d, 0x00, 0xc1, 0x44, 0xc5, 0x25, 0xac, 0x61,
-                0x9d, 0x18, 0xc8, 0x4a, 0x3f, 0x47, 0x18, 0xe2, 0x44, 0x8b, 0x2f, 0xe3, 0x24, 0xd9,
-                0xcc, 0xda, 0x27, 0x10, 0xac, 0xad, 0xe2, 0x56,
-            ],
-            &[
-                0x51, 0x11, 0x0d, 0x40, 0xf6, 0xc8, 0xff, 0xf0, 0xeb, 0x1a, 0xe3, 0x34, 0x45, 0xa8,
-                0x89, 0xf0,
-            ],
-        ),
-        // Test 10
-        (
-            &[
-                0x46, 0x69, 0x23, 0xec, 0x9a, 0xe6, 0x82, 0x21, 0x4f, 0x2c, 0x08, 0x2b, 0xad, 0xb3,
-                0x92, 0x49,
-            ],
-            &[
-                0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad, 0xbe, 0xef, 0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad,
-                0xbe, 0xef, 0xab, 0xad, 0xda, 0xd2,
-            ],
-            &[
-                0x39, 0x80, 0xca, 0x0b, 0x3c, 0x00, 0xe8, 0x41, 0xeb, 0x06, 0xfa, 0xc4, 0x87, 0x2a,
-                0x27, 0x57, 0x85, 0x9e, 0x1c, 0xea, 0xa6, 0xef, 0xd9, 0x84, 0x62, 0x85, 0x93, 0xb4,
-                0x0c, 0xa1, 0xe1, 0x9c, 0x7d, 0x77, 0x3d, 0x00, 0xc1, 0x44, 0xc5, 0x25, 0xac, 0x61,
-                0x9d, 0x18, 0xc8, 0x4a, 0x3f, 0x47, 0x18, 0xe2, 0x44, 0x8b, 0x2f, 0xe3, 0x24, 0xd9,
-                0xcc, 0xda, 0x27, 0x10,
-            ],
-            &[
-                0xed, 0x2c, 0xe3, 0x06, 0x2e, 0x4a, 0x8e, 0xc0, 0x6d, 0xb8, 0xb4, 0xc4, 0x90, 0xe8,
-                0xa2, 0x68,
-            ],
-        ),
-        // Test 11
-        (
-            &[
-                0x46, 0x69, 0x23, 0xec, 0x9a, 0xe6, 0x82, 0x21, 0x4f, 0x2c, 0x08, 0x2b, 0xad, 0xb3,
-                0x92, 0x49,
-            ],
-            &[
-                0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad, 0xbe, 0xef, 0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad,
-                0xbe, 0xef, 0xab, 0xad, 0xda, 0xd2,
-            ],
-            &[
-                0x0f, 0x10, 0xf5, 0x99, 0xae, 0x14, 0xa1, 0x54, 0xed, 0x24, 0xb3, 0x6e, 0x25, 0x32,
-                0x4d, 0xb8, 0xc5, 0x66, 0x63, 0x2e, 0xf2, 0xbb, 0xb3, 0x4f, 0x83, 0x47, 0x28, 0x0f,
-                0xc4, 0x50, 0x70, 0x57, 0xfd, 0xdc, 0x29, 0xdf, 0x9a, 0x47, 0x1f, 0x75, 0xc6, 0x65,
-                0x41, 0xd4, 0xd4, 0xda, 0xd1, 0xc9, 0xe9, 0x3a, 0x19, 0xa5, 0x8e, 0x8b, 0x47, 0x3f,
-                0xa0, 0xf0, 0x62, 0xf7,
-            ],
-            &[
-                0x1e, 0x6a, 0x13, 0x38, 0x06, 0x60, 0x78, 0x58, 0xee, 0x80, 0xea, 0xf2, 0x37, 0x06,
-                0x40, 0x89,
-            ],
-        ),
-        // Test 12
-        (
-            &[
-                0x46, 0x69, 0x23, 0xec, 0x9a, 0xe6, 0x82, 0x21, 0x4f, 0x2c, 0x08, 0x2b, 0xad, 0xb3,
-                0x92, 0x49,
-            ],
-            &[
-                0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad, 0xbe, 0xef, 0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad,
-                0xbe, 0xef, 0xab, 0xad, 0xda, 0xd2,
-            ],
-            &[
-                0xd2, 0x7e, 0x88, 0x68, 0x1c, 0xe3, 0x24, 0x3c, 0x48, 0x30, 0x16, 0x5a, 0x8f, 0xdc,
-                0xf9, 0xff, 0x1d, 0xe9, 0xa1, 0xd8, 0xe6, 0xb4, 0x47, 0xef, 0x6e, 0xf7, 0xb7, 0x98,
-                0x28, 0x66, 0x6e, 0x45, 0x81, 0xe7, 0x90, 0x12, 0xaf, 0x34, 0xdd, 0xd9, 0xe2, 0xf0,
-                0x37, 0x58, 0x9b, 0x29, 0x2d, 0xb3, 0xe6, 0x7c, 0x03, 0x67, 0x45, 0xfa, 0x22, 0xe7,
-                0xe9, 0xb7, 0x37, 0x3b,
-            ],
-            &[
-                0x82, 0x56, 0x7f, 0xb0, 0xb4, 0xcc, 0x37, 0x18, 0x01, 0xea, 0xde, 0xc0, 0x05, 0x96,
-                0x8e, 0x94,
-            ],
-        ),
-        // Test 13
-        (
-            &[
-                0xdc, 0x95, 0xc0, 0x78, 0xa2, 0x40, 0x89, 0x89, 0xad, 0x48, 0xa2, 0x14, 0x92, 0x84,
-                0x20, 0x87,
-            ],
-            &[],
-            &[],
-            &[
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00,
-            ],
-        ),
-        // Test 14
-        (
-            &[
-                0xdc, 0x95, 0xc0, 0x78, 0xa2, 0x40, 0x89, 0x89, 0xad, 0x48, 0xa2, 0x14, 0x92, 0x84,
-                0x20, 0x87,
-            ],
-            &[],
-            &[
-                0xce, 0xa7, 0x40, 0x3d, 0x4d, 0x60, 0x6b, 0x6e, 0x07, 0x4e, 0xc5, 0xd3, 0xba, 0xf3,
-                0x9d, 0x18,
-            ],
-            &[
-                0x83, 0xde, 0x42, 0x5c, 0x5e, 0xdc, 0x5d, 0x49, 0x8f, 0x38, 0x2c, 0x44, 0x10, 0x41,
-                0xca, 0x92,
-            ],
-        ),
-        // Test 15
-        (
-            &[
-                0xac, 0xbe, 0xf2, 0x05, 0x79, 0xb4, 0xb8, 0xeb, 0xce, 0x88, 0x9b, 0xac, 0x87, 0x32,
-                0xda, 0xd7,
-            ],
-            &[],
-            &[
-                0x52, 0x2d, 0xc1, 0xf0, 0x99, 0x56, 0x7d, 0x07, 0xf4, 0x7f, 0x37, 0xa3, 0x2a, 0x84,
-                0x42, 0x7d, 0x64, 0x3a, 0x8c, 0xdc, 0xbf, 0xe5, 0xc0, 0xc9, 0x75, 0x98, 0xa2, 0xbd,
-                0x25, 0x55, 0xd1, 0xaa, 0x8c, 0xb0, 0x8e, 0x48, 0x59, 0x0d, 0xbb, 0x3d, 0xa7, 0xb0,
-                0x8b, 0x10, 0x56, 0x82, 0x88, 0x38, 0xc5, 0xf6, 0x1e, 0x63, 0x93, 0xba, 0x7a, 0x0a,
-                0xbc, 0xc9, 0xf6, 0x62, 0x89, 0x80, 0x15, 0xad,
-            ],
-            &[
-                0x4d, 0xb8, 0x70, 0xd3, 0x7c, 0xb7, 0x5f, 0xcb, 0x46, 0x09, 0x7c, 0x36, 0x23, 0x0d,
-                0x16, 0x12,
-            ],
-        ),
-        // Test 16
-        (
-            &[
-                0xac, 0xbe, 0xf2, 0x05, 0x79, 0xb4, 0xb8, 0xeb, 0xce, 0x88, 0x9b, 0xac, 0x87, 0x32,
-                0xda, 0xd7,
-            ],
-            &[
-                0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad, 0xbe, 0xef, 0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad,
-                0xbe, 0xef, 0xab, 0xad, 0xda, 0xd2,
-            ],
-            &[
-                0x52, 0x2d, 0xc1, 0xf0, 0x99, 0x56, 0x7d, 0x07, 0xf4, 0x7f, 0x37, 0xa3, 0x2a, 0x84,
-                0x42, 0x7d, 0x64, 0x3a, 0x8c, 0xdc, 0xbf, 0xe5, 0xc0, 0xc9, 0x75, 0x98, 0xa2, 0xbd,
-                0x25, 0x55, 0xd1, 0xaa, 0x8c, 0xb0, 0x8e, 0x48, 0x59, 0x0d, 0xbb, 0x3d, 0xa7, 0xb0,
-                0x8b, 0x10, 0x56, 0x82, 0x88, 0x38, 0xc5, 0xf6, 0x1e, 0x63, 0x93, 0xba, 0x7a, 0x0a,
-                0xbc, 0xc9, 0xf6, 0x62,
-            ],
-            &[
-                0x8b, 0xd0, 0xc4, 0xd8, 0xaa, 0xcd, 0x39, 0x1e, 0x67, 0xcc, 0xa4, 0x47, 0xe8, 0xc3,
-                0x8f, 0x65,
-            ],
-        ),
-        // Test 17
-        (
-            &[
-                0xac, 0xbe, 0xf2, 0x05, 0x79, 0xb4, 0xb8, 0xeb, 0xce, 0x88, 0x9b, 0xac, 0x87, 0x32,
-                0xda, 0xd7,
-            ],
-            &[
-                0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad, 0xbe, 0xef, 0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad,
-                0xbe, 0xef, 0xab, 0xad, 0xda, 0xd2,
-            ],
-            &[
-                0xc3, 0x76, 0x2d, 0xf1, 0xca, 0x78, 0x7d, 0x32, 0xae, 0x47, 0xc1, 0x3b, 0xf1, 0x98,
-                0x44, 0xcb, 0xaf, 0x1a, 0xe1, 0x4d, 0x0b, 0x97, 0x6a, 0xfa, 0xc5, 0x2f, 0xf7, 0xd7,
-                0x9b, 0xba, 0x9d, 0xe0, 0xfe, 0xb5, 0x82, 0xd3, 0x39, 0x34, 0xa4, 0xf0, 0x95, 0x4c,
-                0xc2, 0x36, 0x3b, 0xc7, 0x3f, 0x78, 0x62, 0xac, 0x43, 0x0e, 0x64, 0xab, 0xe4, 0x99,
-                0xf4, 0x7c, 0x9b, 0x1f,
-            ],
-            &[
-                0x75, 0xa3, 0x42, 0x88, 0xb8, 0xc6, 0x8f, 0x81, 0x1c, 0x52, 0xb2, 0xe9, 0xa2, 0xf9,
-                0x7f, 0x63,
-            ],
-        ),
-        // Test 18
-        (
-            &[
-                0xac, 0xbe, 0xf2, 0x05, 0x79, 0xb4, 0xb8, 0xeb, 0xce, 0x88, 0x9b, 0xac, 0x87, 0x32,
-                0xda, 0xd7,
-            ],
-            &[
-                0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad, 0xbe, 0xef, 0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad,
-                0xbe, 0xef, 0xab, 0xad, 0xda, 0xd2,
-            ],
-            &[
-                0x5a, 0x8d, 0xef, 0x2f, 0x0c, 0x9e, 0x53, 0xf1, 0xf7, 0x5d, 0x78, 0x53, 0x65, 0x9e,
-                0x2a, 0x20, 0xee, 0xb2, 0xb2, 0x2a, 0xaf, 0xde, 0x64, 0x19, 0xa0, 0x58, 0xab, 0x4f,
-                0x6f, 0x74, 0x6b, 0xf4, 0x0f, 0xc0, 0xc3, 0xb7, 0x80, 0xf2, 0x44, 0x45, 0x2d, 0xa3,
-                0xeb, 0xf1, 0xc5, 0xd8, 0x2c, 0xde, 0xa2, 0x41, 0x89, 0x97, 0x20, 0x0e, 0xf8, 0x2e,
-                0x44, 0xae, 0x7e, 0x3f,
-            ],
-            &[
-                0xd5, 0xff, 0xcf, 0x6f, 0xc5, 0xac, 0x4d, 0x69, 0x72, 0x21, 0x87, 0x42, 0x1a, 0x7f,
-                0x17, 0x0b,
-            ],
-        ),
-    ];
+    z0 &= 0x1111_1111;
+    z1 &= 0x2222_2222;
+    z2 &= 0x4444_4444;
+    z3 &= 0x8888_8888;
 
-    #[test]
-    fn hash() {
-        for &(h, a, c, g) in CASES.iter() {
-            let ghash = Ghash::new(h.try_into().unwrap());
-            assert_eq!(&ghash.input_a(a).input_c(c).result()[..], g);
-        }
-    }
-
-    #[test]
-    fn split_input() {
-        for &(h, a, c, g) in CASES.iter() {
-            let ghash = Ghash::new(h.try_into().unwrap());
-            let (a1, a2) = a.split_at(a.len() / 2);
-            let (c1, c2) = c.split_at(c.len() / 2);
-            assert_eq!(
-                &ghash
-                    .input_a(a1)
-                    .input_a(a2)
-                    .input_c(c1)
-                    .input_c(c2)
-                    .result()[..],
-                g
-            );
-        }
-    }
-
-    // #[test]
-    // fn test_gf128(){
-    //     let a=Gf128::new(a, b, c, d)
-    // }
+    z0 | z1 | z2 | z3
 }
 
-#[cfg(test)]
-mod bench {
-    use super::Ghash;
-    use super::Mac;
-    use test::Bencher;
-
-    #[bench]
-    pub fn ghash_10(bh: &mut Bencher) {
-        let mut mac = [0u8; 16];
-        let key = [0u8; 16];
-        let bytes = [1u8; 10];
-        bh.iter(|| {
-            let mut ghash = Ghash::new(&key);
-            ghash.input(&bytes);
-            ghash.raw_result(&mut mac);
-        });
-        bh.bytes = bytes.len() as u64;
+pub fn ghash(key: &[u8; 16], msg: &[[u8; 16]]) -> [u8; 16] {
+    let mut ghash = GHash::new(key);
+    for chunk in msg {
+        ghash.update(chunk);
     }
-
-    #[bench]
-    pub fn ghash_1k(bh: &mut Bencher) {
-        let mut mac = [0u8; 16];
-        let key = [0u8; 16];
-        let bytes = [1u8; 1024];
-        bh.iter(|| {
-            let mut ghash = Ghash::new(&key);
-            ghash.input(&bytes);
-            ghash.raw_result(&mut mac);
-        });
-        bh.bytes = bytes.len() as u64;
-    }
-
-    #[bench]
-    pub fn ghash_64k(bh: &mut Bencher) {
-        let mut mac = [0u8; 16];
-        let key = [0u8; 16];
-        let bytes = [1u8; 65536];
-        bh.iter(|| {
-            let mut ghash = Ghash::new(&key);
-            ghash.input(&bytes);
-            ghash.raw_result(&mut mac);
-        });
-        bh.bytes = bytes.len() as u64;
-    }
+    ghash.finalize()
 }
