@@ -1,4 +1,4 @@
-use crate::cipher::chacha::ChaChaInner;
+use crate::symmetry::chacha::ChaChaInner;
 
 use crate::rng::Rng;
 

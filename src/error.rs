@@ -14,3 +14,15 @@ impl fmt::Display for HexCodecError {
         }
     }
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ECError {
+    InvalidPublicKey,
+}
+
+impl fmt::Display for ECError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            ECError::InvalidPublicKey => write!(f, "Invalid public key"),
+        }
+    }
+}

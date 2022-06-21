@@ -1,6 +1,5 @@
-#![no_std]
+// #![no_std]
 #![forbid(unsafe_code)]
-#![feature(test)]
 #![feature(inline_const)]
 #![feature(exclusive_range_pattern)]
 #![feature(associated_type_defaults)]
@@ -9,13 +8,15 @@
 #![feature(bigint_helper_methods)]
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
+#![feature(test)]
 
 #[cfg(test)]
 extern crate test;
 
-pub mod cipher;
+pub mod ec;
 pub mod error;
 pub mod hash;
 pub mod mac;
 pub mod rng;
+pub mod symmetry;
 pub mod utils;

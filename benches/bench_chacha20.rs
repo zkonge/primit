@@ -5,7 +5,7 @@ extern crate test;
 
 use test::{black_box, Bencher};
 
-use primit::cipher::chacha::ChaCha20;
+use primit::symmetry::chacha::ChaCha20;
 
 const DATA_LENGTH: usize = 1024 * 256;
 

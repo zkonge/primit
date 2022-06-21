@@ -15,11 +15,12 @@ sha2 = "*"
 md-5 = "*"
 chacha20 = "*"
 aes = "*"
+p256 = "*"
 
 [profile.release]
 codegen-units = 1
 debug = true
 incremental = false
 lto = "fat"
-opt-level = "z"
+opt-level = 3
 panic = "abort"

@@ -3,8 +3,8 @@ use aes::{
     Aes128,
 };
 use primit::{
-    cipher::aes::AES128,
     rng::{cprng::FastRng, Rng},
+    symmetry::aes::AES128,
 };
 
 #[test]
