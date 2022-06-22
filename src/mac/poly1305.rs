@@ -71,7 +71,10 @@ fn compress(state: &mut Poly1305) {
     state.h = [h0, h1, h2, h3, h4];
 }
 
-impl Mac<32, 16> for Poly1305 {
+impl Mac for Poly1305 {
+    const KEY_LENGTH: usize = 32;
+    const MAC_LENGTH: usize = 16;
+
     fn new(key: &[u8; 32]) -> Self {
         let mut p = Poly1305::default();
 

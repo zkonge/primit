@@ -15,7 +15,10 @@ pub struct P256 {
     x: Int256,
 }
 
-impl ECDHE<65, 32> for P256 {
+impl ECDHE for P256 {
+    const POINT_SIZE: usize = 65;
+    const INT_SIZE: usize = 32;
+
     fn new(rng: &mut impl Rng) -> Self {
         let mut buf = [0u8; 32];
         loop {

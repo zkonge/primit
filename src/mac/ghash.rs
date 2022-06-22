@@ -16,7 +16,10 @@ fn mulx(block: &[u8; 16]) -> [u8; 16] {
 
 pub struct GHash(Polyval);
 
-impl Mac<16, 16> for GHash {
+impl Mac for GHash {
+    const KEY_LENGTH: usize = 16;
+    const MAC_LENGTH: usize = 16;
+
     fn new(h: &[u8; 16]) -> Self {
         let mut h = *h;
         h.reverse();

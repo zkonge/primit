@@ -5,7 +5,7 @@ extern crate test;
 
 use test::{black_box, Bencher};
 
-use primit::cipher::aes::AES128;
+use primit::symmetry::aes::AES128;
 
 const DATA_LENGTH: usize = 1024 * 256;
 
