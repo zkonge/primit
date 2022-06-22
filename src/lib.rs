@@ -13,6 +13,7 @@
 #[cfg(test)]
 extern crate test;
 
+pub mod aead;
 pub mod ec;
 pub mod error;
 pub mod hash;
