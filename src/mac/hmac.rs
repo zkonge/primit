@@ -11,7 +11,7 @@ pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; SHA256::LENGTH] {
     let key = if key.len() > SHA256::LENGTH {
         sha256(key)
     } else {
-        let mut k = [0u8; 32];
+        let mut k = [0u8; SHA256::LENGTH];
         k[..key.len()].copy_from_slice(key);
         k
     };
