@@ -1,8 +1,6 @@
 // https://cr.yp.to/mac/poly1305-20050329.pdf
 // https://github.com/floodyberry/poly1305-donna
 
-use core::convert::TryInto;
-
 use crate::utils::endian::{EndianConvertion, LittleEndian};
 
 use super::Mac;
@@ -12,14 +10,12 @@ pub struct Poly1305 {
     r: [u32; 5],
     h: [u32; 5],
     pad: [u32; 4],
-    last_round: bool,
     buffer: [u8; 16],
     buffer_offset: usize,
 }
 
 fn compress(state: &mut Poly1305) {
     let data = &state.buffer;
-    let hibit = if state.last_round { 0 } else { 1 << 24 };
 
     let [r0, r1, r2, r3, r4] = state.r.map(Into::<u64>::into);
     let [mut h0, mut h1, mut h2, mut h3, mut h4] = state.h;
@@ -30,7 +26,7 @@ fn compress(state: &mut Poly1305) {
     h1 += (u32::from_le_bytes(data[3..7].try_into().unwrap()) >> 2) & 0x3ff_ffff;
     h2 += (u32::from_le_bytes(data[6..10].try_into().unwrap()) >> 4) & 0x3ff_ffff;
     h3 += (u32::from_le_bytes(data[9..13].try_into().unwrap()) >> 6) & 0x3ff_ffff;
-    h4 += (u32::from_le_bytes(data[12..16].try_into().unwrap()) >> 8) | hibit;
+    h4 += (u32::from_le_bytes(data[12..16].try_into().unwrap()) >> 8) | 0x100_0000;
 
     let [h0, h1, h2, h3, h4] = [h0, h1, h2, h3, h4].map(Into::<u64>::into);
     // h *= r
@@ -78,6 +74,8 @@ impl Mac for Poly1305 {
     fn new(key: &[u8; 32]) -> Self {
         let mut p = Poly1305::default();
 
+        // println!("poly_key: {:02x?}", key);
+
         // r &= 0xffffffc0ffffffc0ffffffc0fffffff
         p.r[0] = (u32::from_le_bytes(key[..4].try_into().unwrap())) & 0x3ff_ffff;
         p.r[1] = (u32::from_le_bytes(key[3..7].try_into().unwrap()) >> 2) & 0x3ff_ff03;
@@ -112,12 +110,10 @@ impl Mac for Poly1305 {
     }
 
     fn finalize(mut self) -> [u8; 16] {
-        if self.buffer_offset != 16 {
-            self.buffer[self.buffer_offset] = 1;
-            self.buffer[self.buffer_offset + 1..].fill(0);
-            self.last_round = true
+        if self.buffer_offset != 0 {
+            self.buffer[self.buffer_offset..].fill(0);
+            compress(&mut self);
         }
-        compress(&mut self);
 
         let [mut h0, mut h1, mut h2, mut h3, mut h4] = self.h;
 

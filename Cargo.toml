@@ -14,13 +14,15 @@ system-random = ["getrandom"]
 sha2 = "*"
 md-5 = "*"
 chacha20 = "*"
+poly1305 = "*"
 aes = "*"
 p256 = "*"
+
 
 [profile.release]
 codegen-units = 1
 debug = true
 incremental = false
 lto = "fat"
-opt-level = 3
+opt-level = 's'
 panic = "abort"

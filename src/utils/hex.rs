@@ -68,8 +68,6 @@ pub fn encode_fix<const N: usize>(input: &[u8; N]) -> [u8; N * 2] {
 
 pub fn decode_fix<const N: usize>(input: &[u8; N * 2]) -> Result<[u8; N], HexCodecError> {
     let mut r = [0u8; N];
-    if let Err(e @ HexCodecError::InvalidHexCharacter) = decode(&mut r, input) {
-        return Err(e);
-    }
+    decode(&mut r, input)?;
     Ok(r)
 }
