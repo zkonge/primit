@@ -21,13 +21,13 @@ pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; SHA256::LENGTH] {
     xor(&mut i_msg, &key);
     xor(&mut o_msg, &key);
 
-    let mut h=SHA256::new();
+    let mut h = SHA256::new();
     h.update(&i_msg);
     h.update(message);
 
     let h_i = sha256(&h.digest());
 
-    let mut h=SHA256::new();
+    let mut h = SHA256::new();
     h.update(&o_msg);
     h.update(&h_i);
     h.digest()

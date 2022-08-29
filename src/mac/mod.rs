@@ -1,6 +1,6 @@
 pub mod ghash;
-pub mod poly1305;
 pub mod hmac;
+pub mod poly1305;
 
 pub trait Mac {
     const KEY_LENGTH: usize;

@@ -21,7 +21,7 @@ impl Encryptor for Chacha20Poly1305Encryptor {
 
     fn encrypt(&mut self, data: &mut [u8]) {
         self.cipher.apply(data);
-        self.mac.update(&data);
+        self.mac.update(data);
         self.data_length += data.len();
     }
 
@@ -92,7 +92,7 @@ impl Aead for Chacha20Poly1305 {
         let mut mac = Poly1305::new(&first_round[..32].try_into().unwrap());
 
         // apply ad
-        mac.update(&ad);
+        mac.update(ad);
         let left = ad.len() % 16;
         if left != 0 {
             mac.update(&[0u8; 16][..16 - left]);
@@ -107,25 +107,12 @@ impl Aead for Chacha20Poly1305 {
     }
 
     fn decryptor(&self, nonce: &[u8; Self::NONCE_LENGTH], ad: &[u8]) -> Self::Decryptor {
-        let mut cipher = ChaCha20::new(&self.0, nonce);
-
-        //extract first round stream for poly1305 key
-        let mut first_round = [0u8; 64];
-        cipher.apply(&mut first_round);
-        let mut mac = Poly1305::new(&first_round[..32].try_into().unwrap());
-
-        // apply ad
-        mac.update(ad);
-        let left = ad.len() % 16;
-        if left != 0 {
-            mac.update(&[0u8; 16][..16 - left]);
-        }
-
+        let encryptor = self.encryptor(nonce, ad);
         Chacha20Poly1305Decryptor {
-            cipher,
-            mac,
-            ad_length: ad.len(),
-            data_length: 0,
+            cipher: encryptor.cipher,
+            mac: encryptor.mac,
+            ad_length: encryptor.ad_length,
+            data_length: encryptor.data_length,
         }
     }
 }

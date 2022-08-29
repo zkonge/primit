@@ -17,6 +17,7 @@ chacha20 = "*"
 poly1305 = "*"
 aes = "*"
 p256 = "*"
+aes-gcm = "*"
 
 
 [profile.release]

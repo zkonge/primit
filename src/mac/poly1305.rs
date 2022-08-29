@@ -74,8 +74,6 @@ impl Mac for Poly1305 {
     fn new(key: &[u8; 32]) -> Self {
         let mut p = Poly1305::default();
 
-        // println!("poly_key: {:02x?}", key);
-
         // r &= 0xffffffc0ffffffc0ffffffc0fffffff
         p.r[0] = (u32::from_le_bytes(key[..4].try_into().unwrap())) & 0x3ff_ffff;
         p.r[1] = (u32::from_le_bytes(key[3..7].try_into().unwrap()) >> 2) & 0x3ff_ff03;

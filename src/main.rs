@@ -14,13 +14,10 @@ fn main() {
     let mut res = sha256(b"haha");
     let cp = Chacha20Poly1305::new(&res);
     let mut enc = cp.encryptor(&res[..12].try_into().unwrap(), b"");
-    let _aead = enc.encrypt(&mut res);
+    enc.encrypt(&mut res);
     let mut rng = FastRng::new_from_system();
     let sk = P256::new(&mut rng);
-    let data = match sk.exchange(&sk.to_public()) {
-        Ok(d) => d,
-        Err(_) => [0u8; 32],
-    };
+    let data = sk.exchange(&sk.to_public()).unwrap_or([0u8; 32]);
     let ret = md5(&data).iter().fold(0, |acc, x| acc ^ (*x as i32));
     unsafe { exit(ret) };
 }

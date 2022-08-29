@@ -14,7 +14,11 @@ fn mulx(block: &[u8; 16]) -> [u8; 16] {
     v.to_le_bytes()
 }
 
-pub struct GHash(Polyval);
+pub struct GHash {
+    core: Polyval,
+    buffer: [u8; 16],
+    buffer_offset: usize,
+}
 
 impl Mac for GHash {
     const KEY_LENGTH: usize = 16;
@@ -24,22 +28,51 @@ impl Mac for GHash {
         let mut h = *h;
         h.reverse();
 
-        GHash(Polyval::new(&mulx(&h)))
+        GHash {
+            core: Polyval::new(&mulx(&h)),
+            buffer: [0u8; 16],
+            buffer_offset: 0,
+        }
     }
 
-    fn update(&mut self, x: &[u8]) {
-        debug_assert_eq!(x.len(), 16);
-        let x: &mut [u8; 16] = &mut x.try_into().unwrap();
-        x.reverse();
+    fn update(&mut self, data: &[u8]) {
+        if data.len() < self.buffer[self.buffer_offset..].len() {
+            self.buffer[self.buffer_offset..][..data.len()].copy_from_slice(data);
+            self.buffer_offset += data.len();
+            return;
+        }
+        if self.buffer_offset < 16 {
+            self.buffer[self.buffer_offset..].copy_from_slice(&data[..16 - self.buffer_offset]);
+        }
 
-        self.0.update(x);
+        compress(self);
+
+        let (chunks, remain) = data[16 - self.buffer_offset..].as_chunks::<16>();
+        for chunk in chunks {
+            self.buffer = *chunk;
+            compress(self);
+        }
+
+        self.buffer[..remain.len()].copy_from_slice(remain);
+        self.buffer_offset = remain.len();
     }
 
-    fn finalize(self) -> [u8; 16] {
-        let mut output = self.0.finalize();
+    fn finalize(mut self) -> [u8; 16] {
+        if self.buffer_offset != 0 {
+            self.buffer[self.buffer_offset..].fill(0);
+            compress(&mut self);
+        }
+        let mut output = self.core.finalize();
         output.reverse();
         output
     }
+}
+
+fn compress(state: &mut GHash) {
+    let x = &mut state.buffer;
+    x.reverse();
+
+    state.core.update(x);
 }
 
 struct Polyval {
