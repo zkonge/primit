@@ -1,6 +1,6 @@
 [package]
 name = "primit"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 
 [dependencies]
@@ -25,5 +25,5 @@ codegen-units = 1
 debug = true
 incremental = false
 lto = "fat"
-opt-level = 's'
+opt-level = "s"
 panic = "abort"
