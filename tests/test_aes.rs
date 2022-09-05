@@ -45,6 +45,5 @@ fn test_decrypt() {
 
         rng.fill_bytes(&mut input);
         rng.fill_bytes(&mut key);
-        dbg!(input);
     }
 }

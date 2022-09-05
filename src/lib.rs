@@ -1,5 +1,5 @@
 #![no_std]
-#![forbid(unsafe_code)]
+// #![forbid(unsafe_code)]
 #![feature(inline_const)]
 #![feature(exclusive_range_pattern)]
 #![feature(associated_type_defaults)]

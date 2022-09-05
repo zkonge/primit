@@ -7,8 +7,9 @@ edition = "2021"
 getrandom = { version = "0.2", optional = true }
 
 [features]
-default = ["system-random"]
+default = ["system-random", "aesni"]
 system-random = ["getrandom"]
+aesni = []
 
 [dev-dependencies]
 sha2 = "*"
