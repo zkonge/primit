@@ -1,20 +1,30 @@
 [package]
 name = "primit"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+getrandom = { version = "0.2", optional = true }
+
+[features]
+default = ["system-random"]
+system-random = ["getrandom"]
+aesni = []
 
 [dev-dependencies]
-# hex-simd = "0.5.0"
-# hex = "*"
 sha2 = "*"
-ring = "*"
+md-5 = "*"
+chacha20 = "*"
+poly1305 = "*"
+aes = "*"
+p256 = "*"
+aes-gcm = "*"
+
 
 [profile.release]
 codegen-units = 1
-debug = false
+debug = true
 incremental = false
 lto = "fat"
-opt-level = 'z'
+opt-level = "s"
 panic = "abort"
