@@ -6,13 +6,12 @@ use core::arch::x86_64::*;
 use core::mem;
 
 macro_rules! gen_round_key {
-    ($ek:tt, $i:tt, $rcon:tt) => {{
-        let mut key = $ek[$i - 1];
-        let mut gen = _mm_aeskeygenassist_si128::<$rcon>(key);
-        gen = _mm_shuffle_epi32(gen, 0xff);
+    ($rk:ident, $i:literal, $rcon:literal) => {{
+        let mut key = $rk[$i - 1];
+        let gen = _mm_shuffle_epi32(_mm_aeskeygenassist_si128::<$rcon>(key), 0xff);
         key = _mm_xor_si128(key, _mm_slli_si128(key, 4));
         key = _mm_xor_si128(key, _mm_slli_si128(key, 8));
-        $ek[$i] = _mm_xor_si128(key, gen);
+        $rk[$i] = _mm_xor_si128(key, gen);
     }};
 }
 

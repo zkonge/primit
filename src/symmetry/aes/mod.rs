@@ -7,3 +7,6 @@ pub use soft::*;
 mod aesni;
 #[cfg(feature = "aesni")]
 pub use aesni::*;
+
+#[cfg(all(not(target_feature = "aes"), feature = "aesni"))]
+compile_error!("Use `aesni` feature without target aes support");

@@ -7,7 +7,7 @@ edition = "2021"
 getrandom = { version = "0.2", optional = true }
 
 [features]
-default = ["system-random", "aesni"]
+default = ["system-random"]
 system-random = ["getrandom"]
 aesni = []
 
