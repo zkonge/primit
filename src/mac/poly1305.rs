@@ -2,7 +2,7 @@
 // https://github.com/floodyberry/poly1305-donna
 
 use super::Mac;
-use crate::utils::endian::{EndianConvertion, LittleEndian};
+use crate::utils::endian::{EndianConvertion, LittleEndian, assert_len};
 
 #[derive(Debug, Default)]
 pub struct Poly1305 {
@@ -18,7 +18,7 @@ fn compress(state: &mut Poly1305) {
 
     let [r0, r1, r2, r3, r4] = state.r.map(Into::<u64>::into);
     let [mut h0, mut h1, mut h2, mut h3, mut h4] = state.h;
-    let [s1, s2, s3, s4] = [r1, r2, r3, r4].map(|x| x as u64 * 5);
+    let [s1, s2, s3, s4] = [r1, r2, r3, r4].map(|x| x * 5);
 
     // h += m
     h0 += (u32::from_le_bytes(data[0..4].try_into().unwrap())) & 0x3ff_ffff;
@@ -80,7 +80,7 @@ impl Mac for Poly1305 {
         p.r[3] = (u32::from_le_bytes(key[9..13].try_into().unwrap()) >> 6) & 0x3f0_3fff;
         p.r[4] = (u32::from_le_bytes(key[12..16].try_into().unwrap()) >> 8) & 0x00f_ffff;
 
-        LittleEndian::from_bytes(&mut p.pad, &key[16..32]);
+        LittleEndian::from_bytes(&mut p.pad, assert_len(&key[16..32]));
 
         p
     }
