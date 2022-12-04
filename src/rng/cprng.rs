@@ -1,6 +1,4 @@
-use crate::symmetry::chacha::ChaChaInner;
-
-use crate::rng::Rng;
+use crate::{rng::Rng, symmetry::chacha::ChaChaInner};
 
 #[derive(Debug)]
 pub struct FastRng(ChaChaInner<8>);

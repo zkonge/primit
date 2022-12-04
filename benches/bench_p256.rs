@@ -2,9 +2,8 @@
 
 extern crate test;
 
-use test::{black_box, Bencher};
-
 use primit::ec::{p256::P256, ECDHE};
+use test::{black_box, Bencher};
 
 #[bench]
 fn bench_p256(b: &mut Bencher) {

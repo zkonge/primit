@@ -1,11 +1,9 @@
 // http://csrc.nist.gov/groups/STM/cavp/documents/shs/sha256-384-512.pdf
 
-use core::mem::size_of;
-use core::num::Wrapping;
-
-use crate::utils::endian::{BigEndian, EndianConvertion};
+use core::{mem::size_of, num::Wrapping};
 
 use super::Digest;
+use crate::utils::endian::{BigEndian, EndianConvertion};
 
 pub const STATE_SIZE: usize = 8;
 pub const COMPRESS_SIZE: usize = 64;
