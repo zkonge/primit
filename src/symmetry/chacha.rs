@@ -1,5 +1,5 @@
 use crate::utils::{
-    endian::{EndianConvertion, LittleEndian},
+    endian::{assert_len_mut, EndianConvertion, LittleEndian},
     xor::xor,
 };
 
@@ -16,9 +16,9 @@ impl<const R: usize> ChaChaInner<R> {
         let mut state = [0; 16];
 
         state[0..4].copy_from_slice(&INIT_VECTOR);
-        LittleEndian::from_bytes(&mut state[4..12], key);
+        LittleEndian::from_bytes(assert_len_mut::<8, _>(&mut state[4..12]), key);
         state[12] = 0;
-        LittleEndian::from_bytes(&mut state[13..16], nonce);
+        LittleEndian::from_bytes(assert_len_mut::<3, _>(&mut state[13..16]), nonce);
 
         Self(state)
     }

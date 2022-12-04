@@ -132,7 +132,7 @@ fn compress(state: &mut [u32; STATE_SIZE], data: &[u8; COMPRESS_SIZE]) {
         d = c;
         c = b;
         b = (a.wrapping_add(f).wrapping_add(K[i]).wrapping_add(w[g]))
-            .rotate_left(R[i as usize] as u32)
+            .rotate_left(R[i] as u32)
             .wrapping_add(b);
         a = temp;
     }

@@ -3,7 +3,7 @@
 use core::{mem::size_of, num::Wrapping};
 
 use super::Digest;
-use crate::utils::endian::{BigEndian, EndianConvertion};
+use crate::utils::endian::{assert_len_mut, BigEndian, EndianConvertion};
 
 pub const STATE_SIZE: usize = 8;
 pub const COMPRESS_SIZE: usize = 64;
@@ -114,7 +114,7 @@ fn compress(state: &mut [u32; STATE_SIZE], data: &[u8; COMPRESS_SIZE]) {
     let w = {
         let mut w = [0u32; 64];
 
-        BigEndian::from_bytes(&mut w[..16], data);
+        BigEndian::from_bytes(assert_len_mut::<16, _>(&mut w[..16]), data);
 
         for j in 16..64 {
             let wj15 = w[j - 15];
