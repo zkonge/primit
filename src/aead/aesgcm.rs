@@ -1,11 +1,10 @@
+use super::{Aead, Decryptor, Encryptor};
 use crate::{
     error::AeadError,
     mac::{ghash::GHash, Mac},
     symmetry::aes::AES128,
     utils::xor::xor,
 };
-
-use super::{Aead, Decryptor, Encryptor};
 
 const KEY_LENGTH: usize = 16;
 const NONCE_LENGTH: usize = 12;

@@ -2,9 +2,8 @@
 
 use core::mem::size_of;
 
-use crate::utils::endian::{EndianConvertion, LittleEndian};
-
 use super::Digest;
+use crate::utils::endian::{EndianConvertion, LittleEndian};
 
 pub const STATE_SIZE: usize = 4;
 pub const COMPRESS_SIZE: usize = 64;

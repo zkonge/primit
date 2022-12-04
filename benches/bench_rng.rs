@@ -3,9 +3,8 @@
 
 extern crate test;
 
-use test::{black_box, Bencher};
-
 use primit::rng::{cprng::FastRng, Rng};
+use test::{black_box, Bencher};
 
 const DATA_LENGTH: usize = 1024 * 256;
 

@@ -1,11 +1,9 @@
-use crate::{error::ECError, rng::Rng};
-
 use self::{
     int256::Int256,
     point256::{NPoint256, Point256, G},
 };
-
 use super::ECDHE;
+use crate::{error::ECError, rng::Rng};
 
 mod int256;
 mod point256;

@@ -1,6 +1,7 @@
-use poly1305::universal_hash::{KeyInit, UniversalHash};
-use poly1305::Poly1305;
-
+use poly1305::{
+    universal_hash::{KeyInit, UniversalHash},
+    Poly1305,
+};
 use primit::mac::poly1305::poly1305;
 
 fn std_poly1305(key: &[u8], data: &[u8]) -> [u8; poly1305::BLOCK_SIZE] {

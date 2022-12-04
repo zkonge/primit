@@ -3,9 +3,8 @@
 
 extern crate test;
 
-use test::{black_box, Bencher};
-
 use primit::mac::ghash::ghash;
+use test::{black_box, Bencher};
 
 const DATA_LENGTH: usize = 1024 * 256;
 

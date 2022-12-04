@@ -1,9 +1,8 @@
 // https://cr.yp.to/mac/poly1305-20050329.pdf
 // https://github.com/floodyberry/poly1305-donna
 
-use crate::utils::endian::{EndianConvertion, LittleEndian};
-
 use super::Mac;
+use crate::utils::endian::{EndianConvertion, LittleEndian};
 
 #[derive(Debug, Default)]
 pub struct Poly1305 {
