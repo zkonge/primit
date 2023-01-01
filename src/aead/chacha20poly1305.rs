@@ -7,6 +7,7 @@ use crate::{
 
 const KEY_LENGTH: usize = 32;
 const NONCE_LENGTH: usize = 12;
+const BLOCK_LENGTH: usize = 64;
 const MAC_LENGTH: usize = 16;
 
 pub struct Chacha20Poly1305Encryptor {
@@ -17,24 +18,40 @@ pub struct Chacha20Poly1305Encryptor {
 }
 
 impl Encryptor for Chacha20Poly1305Encryptor {
+    const BLOCK_LENGTH: usize = BLOCK_LENGTH;
     const MAC_LENGTH: usize = MAC_LENGTH;
 
-    fn encrypt(&mut self, data: &mut [u8]) {
+    fn encrypt(&mut self, data: &mut [u8; Self::BLOCK_LENGTH]) {
         self.cipher.apply(data);
-        self.mac.update(data);
+        for block in data.as_chunks().0 {
+            self.mac.update(block);
+        }
         self.data_length += data.len();
     }
 
-    fn finalize(mut self) -> [u8; MAC_LENGTH] {
-        let left = self.data_length % 16;
-        if left != 0 {
-            self.mac.update(&[0u8; 16][..16 - left]);
-        }
-        // apply lengthes
-        self.mac.update(&(self.ad_length as u64).to_le_bytes());
-        self.mac.update(&(self.data_length as u64).to_le_bytes());
+    fn finalize(mut self, remainder: &mut [u8]) -> [u8; MAC_LENGTH] {
+        self.data_length += remainder.len();
 
-        self.mac.finalize()
+        self.cipher.apply(remainder);
+
+        // 16byte block for poly1305
+        let (aligned_blocks, remainder) = remainder.as_chunks();
+        for block in aligned_blocks {
+            self.mac.update(block);
+        }
+
+        if remainder.len() != 0 {
+            let mut buffer = [0u8; 16];
+            buffer[..remainder.len()].copy_from_slice(remainder);
+            self.mac.update(&buffer);
+        }
+
+        // apply lengthes
+        let mut length_buffer = [0u8; 16];
+        length_buffer[..8].copy_from_slice(&(self.ad_length as u64).to_le_bytes());
+        length_buffer[8..].copy_from_slice(&(self.data_length as u64).to_le_bytes());
+
+        self.mac.finalize(&length_buffer)
     }
 }
 
@@ -46,27 +63,43 @@ pub struct Chacha20Poly1305Decryptor {
 }
 
 impl Decryptor for Chacha20Poly1305Decryptor {
+    const BLOCK_LENGTH: usize = BLOCK_LENGTH;
     const MAC_LENGTH: usize = MAC_LENGTH;
 
-    fn decrypt(&mut self, data: &mut [u8]) {
-        self.mac.update(data);
+    fn decrypt(&mut self, data: &mut [u8; Self::BLOCK_LENGTH]) {
+        for block in data.as_chunks().0 {
+            self.mac.update(block);
+        }
         self.cipher.apply(data);
         self.data_length += data.len();
     }
 
-    fn finalize(mut self, mac: &[u8; MAC_LENGTH]) -> Result<(), AeadError> {
-        let left = self.data_length % 16;
-        if left != 0 {
-            self.mac.update(&[0u8; 16][..16 - left]);
-        }
-        // apply lengthes
-        self.mac.update(&(self.ad_length as u64).to_le_bytes());
-        self.mac.update(&(self.data_length as u64).to_le_bytes());
+    fn finalize(mut self, remainder: &mut [u8], mac: &[u8; MAC_LENGTH]) -> Result<(), AeadError> {
+        self.data_length += remainder.len();
 
-        if mac == &self.mac.finalize() {
+        // 16byte block for poly1305
+        let (aligned_blocks, remainder_cipher) = remainder.as_chunks();
+        for block in aligned_blocks {
+            self.mac.update(block);
+        }
+
+        if remainder_cipher.len() != 0 {
+            let mut buffer = [0u8; 16];
+            buffer[..remainder_cipher.len()].copy_from_slice(remainder_cipher);
+            self.mac.update(&buffer);
+        }
+
+        // apply lengthes
+        let mut length_buffer = [0u8; 16];
+        length_buffer[..8].copy_from_slice(&(self.ad_length as u64).to_le_bytes());
+        length_buffer[8..].copy_from_slice(&(self.data_length as u64).to_le_bytes());
+
+        self.cipher.apply(remainder);
+
+        if mac == &self.mac.finalize(&length_buffer) {
             Ok(())
         } else {
-            Err(AeadError::InvalidMac)
+            Err(AeadError::BadMac)
         }
     }
 }
@@ -92,10 +125,14 @@ impl Aead for Chacha20Poly1305 {
         let mut mac = Poly1305::new(&first_round[..32].try_into().unwrap());
 
         // apply ad
-        mac.update(ad);
-        let left = ad.len() % 16;
-        if left != 0 {
-            mac.update(&[0u8; 16][..16 - left]);
+        let (aligned_blocks, remainder_ad) = ad.as_chunks();
+        for block in aligned_blocks {
+            mac.update(block);
+        }
+        if remainder_ad.len() != 0 {
+            let mut buffer = [0u8; 16];
+            buffer[..remainder_ad.len()].copy_from_slice(remainder_ad);
+            mac.update(&buffer);
         }
 
         Chacha20Poly1305Encryptor {

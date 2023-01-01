@@ -2,72 +2,18 @@
 // https://github.com/floodyberry/poly1305-donna
 
 use super::Mac;
-use crate::utils::endian::{EndianConvertion, LittleEndian, assert_len};
+use crate::utils::endian::{assert_len, EndianConvertion, LittleEndian};
 
 #[derive(Debug, Default)]
 pub struct Poly1305 {
     r: [u32; 5],
     h: [u32; 5],
     pad: [u32; 4],
-    buffer: [u8; 16],
-    buffer_offset: usize,
-}
-
-fn compress(state: &mut Poly1305) {
-    let data = &state.buffer;
-
-    let [r0, r1, r2, r3, r4] = state.r.map(Into::<u64>::into);
-    let [mut h0, mut h1, mut h2, mut h3, mut h4] = state.h;
-    let [s1, s2, s3, s4] = [r1, r2, r3, r4].map(|x| x * 5);
-
-    // h += m
-    h0 += (u32::from_le_bytes(data[0..4].try_into().unwrap())) & 0x3ff_ffff;
-    h1 += (u32::from_le_bytes(data[3..7].try_into().unwrap()) >> 2) & 0x3ff_ffff;
-    h2 += (u32::from_le_bytes(data[6..10].try_into().unwrap()) >> 4) & 0x3ff_ffff;
-    h3 += (u32::from_le_bytes(data[9..13].try_into().unwrap()) >> 6) & 0x3ff_ffff;
-    h4 += (u32::from_le_bytes(data[12..16].try_into().unwrap()) >> 8) | 0x100_0000;
-
-    let [h0, h1, h2, h3, h4] = [h0, h1, h2, h3, h4].map(Into::<u64>::into);
-    // h *= r
-    let d0 = h0 * r0 + h1 * s4 + h2 * s3 + h3 * s2 + h4 * s1;
-    let mut d1 = h0 * r1 + h1 * r0 + h2 * s4 + h3 * s3 + h4 * s2;
-    let mut d2 = h0 * r2 + h1 * r1 + h2 * r0 + h3 * s4 + h4 * s3;
-    let mut d3 = h0 * r3 + h1 * r2 + h2 * r1 + h3 * r0 + h4 * s4;
-    let mut d4 = h0 * r4 + h1 * r3 + h2 * r2 + h3 * r1 + h4 * r0;
-
-    let (mut h0, mut h1, h2, h3, h4);
-
-    // (partial) h %= p
-    let mut c: u32;
-    c = (d0 >> 26) as u32;
-    h0 = d0 as u32 & 0x3ff_ffff;
-    d1 += c as u64;
-
-    c = (d1 >> 26) as u32;
-    h1 = d1 as u32 & 0x3ff_ffff;
-    d2 += c as u64;
-
-    c = (d2 >> 26) as u32;
-    h2 = d2 as u32 & 0x3ff_ffff;
-    d3 += c as u64;
-
-    c = (d3 >> 26) as u32;
-    h3 = d3 as u32 & 0x3ff_ffff;
-    d4 += c as u64;
-
-    c = (d4 >> 26) as u32;
-    h4 = d4 as u32 & 0x3ff_ffff;
-    h0 += c * 5;
-
-    c = h0 >> 26;
-    h0 &= 0x3ff_ffff;
-    h1 += c;
-
-    state.h = [h0, h1, h2, h3, h4];
 }
 
 impl Mac for Poly1305 {
     const KEY_LENGTH: usize = 32;
+    const BLOCK_LENGTH: usize = 16;
     const MAC_LENGTH: usize = 16;
 
     fn new(key: &[u8; 32]) -> Self {
@@ -85,31 +31,20 @@ impl Mac for Poly1305 {
         p
     }
 
-    fn update(&mut self, data: &[u8]) {
-        if data.len() < self.buffer[self.buffer_offset..].len() {
-            self.buffer[self.buffer_offset..][..data.len()].copy_from_slice(data);
-            self.buffer_offset += data.len();
-            return;
-        }
-        if self.buffer_offset < 16 {
-            self.buffer[self.buffer_offset..].copy_from_slice(&data[..16 - self.buffer_offset]);
-        }
-        compress(self);
-
-        let (chunks, remain) = data[16 - self.buffer_offset..].as_chunks::<16>();
-        for chunk in chunks {
-            self.buffer = *chunk;
-            compress(self);
-        }
-
-        self.buffer[..remain.len()].copy_from_slice(remain);
-        self.buffer_offset = remain.len();
+    fn update(&mut self, data: &[u8; Self::BLOCK_LENGTH]) {
+        compress(self, data);
     }
 
-    fn finalize(mut self) -> [u8; 16] {
-        if self.buffer_offset != 0 {
-            self.buffer[self.buffer_offset..].fill(0);
-            compress(&mut self);
+    fn finalize(mut self, remainder: &[u8]) -> [u8; 16] {
+        let (aligned_blocks, remainder) = remainder.as_chunks();
+        for block in aligned_blocks {
+            self.update(block);
+        }
+
+        if remainder.len() != 0 {
+            let mut buffer = [0u8; Self::BLOCK_LENGTH];
+            buffer[..remainder.len()].copy_from_slice(remainder);
+            compress(&mut self, &buffer);
         }
 
         let [mut h0, mut h1, mut h2, mut h3, mut h4] = self.h;
@@ -186,8 +121,57 @@ impl Mac for Poly1305 {
     }
 }
 
+fn compress(state: &mut Poly1305, data: &[u8; Poly1305::BLOCK_LENGTH]) {
+    let [r0, r1, r2, r3, r4] = state.r.map(Into::<u64>::into);
+    let [mut h0, mut h1, mut h2, mut h3, mut h4] = state.h;
+    let [s1, s2, s3, s4] = [r1, r2, r3, r4].map(|x| x * 5);
+
+    // h += m
+    h0 += (u32::from_le_bytes(data[0..4].try_into().unwrap())) & 0x3ff_ffff;
+    h1 += (u32::from_le_bytes(data[3..7].try_into().unwrap()) >> 2) & 0x3ff_ffff;
+    h2 += (u32::from_le_bytes(data[6..10].try_into().unwrap()) >> 4) & 0x3ff_ffff;
+    h3 += (u32::from_le_bytes(data[9..13].try_into().unwrap()) >> 6) & 0x3ff_ffff;
+    h4 += (u32::from_le_bytes(data[12..16].try_into().unwrap()) >> 8) | 0x100_0000;
+
+    let [h0, h1, h2, h3, h4] = [h0, h1, h2, h3, h4].map(Into::<u64>::into);
+    // h *= r
+    let d0 = h0 * r0 + h1 * s4 + h2 * s3 + h3 * s2 + h4 * s1;
+    let mut d1 = h0 * r1 + h1 * r0 + h2 * s4 + h3 * s3 + h4 * s2;
+    let mut d2 = h0 * r2 + h1 * r1 + h2 * r0 + h3 * s4 + h4 * s3;
+    let mut d3 = h0 * r3 + h1 * r2 + h2 * r1 + h3 * r0 + h4 * s4;
+    let mut d4 = h0 * r4 + h1 * r3 + h2 * r2 + h3 * r1 + h4 * r0;
+
+    let (mut h0, mut h1, h2, h3, h4);
+
+    // (partial) h %= p
+    let mut c: u32;
+    c = (d0 >> 26) as u32;
+    h0 = d0 as u32 & 0x3ff_ffff;
+    d1 += c as u64;
+
+    c = (d1 >> 26) as u32;
+    h1 = d1 as u32 & 0x3ff_ffff;
+    d2 += c as u64;
+
+    c = (d2 >> 26) as u32;
+    h2 = d2 as u32 & 0x3ff_ffff;
+    d3 += c as u64;
+
+    c = (d3 >> 26) as u32;
+    h3 = d3 as u32 & 0x3ff_ffff;
+    d4 += c as u64;
+
+    c = (d4 >> 26) as u32;
+    h4 = d4 as u32 & 0x3ff_ffff;
+    h0 += c * 5;
+
+    c = h0 >> 26;
+    h0 &= 0x3ff_ffff;
+    h1 += c;
+
+    state.h = [h0, h1, h2, h3, h4];
+}
+
 pub fn poly1305(key: &[u8; 32], msg: &[u8]) -> [u8; 16] {
-    let mut p = Poly1305::new(key);
-    p.update(msg);
-    p.finalize()
+    Poly1305::new(key).finalize(msg)
 }

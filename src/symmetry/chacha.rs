@@ -11,7 +11,7 @@ pub(crate) struct ChaChaInner<const R: usize>([u32; 16]);
 
 impl<const R: usize> ChaChaInner<R> {
     pub(crate) fn new(key: &[u8; 32], nonce: &[u8; 12]) -> Self {
-        debug_assert!(R % 2 == 0);
+        assert!(R % 2 == 0);
 
         let mut state = [0; 16];
 

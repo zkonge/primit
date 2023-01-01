@@ -11,7 +11,8 @@ const DATA_LENGTH: usize = 1024 * 256;
 fn bench_poly1305(b: &mut Bencher) {
     b.bytes = DATA_LENGTH as u64;
 
-    let d = black_box([0u8; DATA_LENGTH]);
+    let k = black_box([233u8; 32]);
+    let d = black_box([233u8; DATA_LENGTH]);
 
-    b.iter(|| poly1305(&[0u8; 32], &d));
+    b.iter(|| poly1305(&k, &d));
 }

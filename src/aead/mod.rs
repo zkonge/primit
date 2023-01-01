@@ -1,5 +1,5 @@
 use crate::error::AeadError;
-pub mod aesgcm;
+// pub mod aesgcm;
 pub mod chacha20poly1305;
 
 pub trait Aead {
@@ -14,14 +14,16 @@ pub trait Aead {
 }
 
 pub trait Encryptor {
+    const BLOCK_LENGTH: usize;
     const MAC_LENGTH: usize;
 
-    fn encrypt(&mut self, data: &mut [u8]);
-    fn finalize(self) -> [u8; Self::MAC_LENGTH];
+    fn encrypt(&mut self, data: &mut [u8; Self::BLOCK_LENGTH]);
+    fn finalize(self, remainder: &mut [u8]) -> [u8; Self::MAC_LENGTH];
 }
 pub trait Decryptor {
+    const BLOCK_LENGTH: usize;
     const MAC_LENGTH: usize;
 
-    fn decrypt(&mut self, data: &mut [u8]);
-    fn finalize(self, mac: &[u8; Self::MAC_LENGTH]) -> Result<(), AeadError>;
+    fn decrypt(&mut self, data: &mut [u8; Self::BLOCK_LENGTH]);
+    fn finalize(self, remainder: &mut [u8], mac: &[u8; Self::MAC_LENGTH]) -> Result<(), AeadError>;
 }

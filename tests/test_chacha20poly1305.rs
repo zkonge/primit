@@ -15,9 +15,8 @@ fn test_chacha20poly1305() {
     let origin_data = data.clone();
 
     let alg = Chacha20Poly1305::new(&key);
-    let mut enc = alg.encryptor(&nonce, &aad);
-    enc.encrypt(&mut data);
-    let mac = enc.finalize();
+    let enc = alg.encryptor(&nonce, &aad);
+    let mac = enc.finalize(&mut data);
 
     assert_eq!(
         &data,
@@ -28,9 +27,8 @@ fn test_chacha20poly1305() {
         &[154, 213, 114, 86, 225, 115, 178, 58, 128, 128, 233, 241, 148, 121, 248, 25]
     );
 
-    let mut dec = alg.decryptor(&nonce, &aad);
-    dec.decrypt(&mut data);
-    assert!(dec.finalize(&mac).is_ok());
+    let dec = alg.decryptor(&nonce, &aad);
+    assert!(dec.finalize(&mut data,&mac).is_ok());
 
     assert_eq!(data, origin_data);
 }

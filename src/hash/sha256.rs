@@ -28,74 +28,43 @@ const INIT_VECTOR: [u32; STATE_SIZE] = [
 pub struct SHA256 {
     count: u64,
     state: [u32; STATE_SIZE],
-    buffer: [u8; COMPRESS_SIZE],
-    buffer_offset: usize,
 }
 
 impl Digest for SHA256 {
-    const LENGTH: usize = 32;
+    const BLOCK_LENGTH: usize = COMPRESS_SIZE;
+    const DIGEST_LENGTH: usize = 32;
 
     fn new() -> Self {
         Self {
             count: 0,
             state: INIT_VECTOR,
-            buffer: [0; COMPRESS_SIZE],
-            // point to first unused position
-            buffer_offset: 0,
         }
     }
 
-    fn update(&mut self, data: &[u8]) {
-        let Self {
-            count,
-            buffer,
-            buffer_offset,
-            state,
-        } = self;
-
-        let data_length = data.len();
-
-        // process previous block
-        if *buffer_offset + data_length < COMPRESS_SIZE {
-            buffer[*buffer_offset..*buffer_offset + data_length].copy_from_slice(data);
-            *buffer_offset += data_length;
-            *count += data_length as u64;
-            return;
-        }
-
-        // compress buffer
-        buffer[*buffer_offset..].copy_from_slice(&data[..COMPRESS_SIZE - *buffer_offset]);
-        compress(state, buffer);
-        *count += COMPRESS_SIZE as u64;
-
-        // process current blocks
-        let (chunks, remain) = data[COMPRESS_SIZE - *buffer_offset..].as_chunks();
-        for chunk in chunks {
-            compress(state, chunk);
-        }
-        *count += COMPRESS_SIZE as u64 * chunks.len() as u64;
-
-        // move remainder to buffer
-        buffer[..remain.len()].copy_from_slice(remain);
-        *buffer_offset = remain.len();
-        *count += remain.len() as u64;
+    fn update(&mut self, data: &[u8; Self::BLOCK_LENGTH]) {
+        let Self { count, state } = self;
+        compress(state, data);
+        *count += data.len() as u64;
     }
 
-    fn digest(self) -> [u8; Self::LENGTH] {
-        let Self {
-            count,
-            mut state,
-            mut buffer,
-            buffer_offset,
-        } = self;
+    fn digest(mut self, remainder: &[u8]) -> [u8; Self::DIGEST_LENGTH] {
+        let (aligned_blocks, remainder) = remainder.as_chunks();
+        for block in aligned_blocks {
+            self.update(block);
+        }
 
-        let mut result = [0u8; Self::LENGTH];
+        let mut buffer = [0u8; Self::BLOCK_LENGTH];
+        buffer[..remainder.len()].copy_from_slice(remainder);
+
+        let Self { count, mut state } = self;
+
+        let mut result = [0u8; Self::DIGEST_LENGTH];
 
         // padding
-        buffer[buffer_offset] = 0x80;
-        buffer[buffer_offset + 1..].fill(0);
+        buffer[remainder.len()] = 0x80;
+        buffer[remainder.len() + 1..].fill(0);
 
-        if buffer_offset >= COMPRESS_SIZE - COUNTER_SIZE {
+        if remainder.len() >= COMPRESS_SIZE - COUNTER_SIZE {
             // not enough space for bit size
             compress(&mut state, &buffer);
             buffer.fill(0);
@@ -157,8 +126,6 @@ fn compress(state: &mut [u32; STATE_SIZE], data: &[u8; COMPRESS_SIZE]) {
         .for_each(|(v, x)| *v = v.wrapping_add(x));
 }
 
-pub fn sha256(data: &[u8]) -> [u8; SHA256::LENGTH] {
-    let mut h = SHA256::new();
-    h.update(data);
-    h.digest()
+pub fn sha256(data: &[u8]) -> [u8; SHA256::DIGEST_LENGTH] {
+    SHA256::new().digest(data)
 }

@@ -6,11 +6,12 @@ pub mod sha256;
 // use crate::util::endian::EndianConvertion;
 
 pub trait Digest {
-    const LENGTH: usize;
+    const BLOCK_LENGTH: usize;
+    const DIGEST_LENGTH: usize;
 
     fn new() -> Self;
-    fn update(&mut self, data: &[u8]);
-    fn digest(self) -> [u8; Self::LENGTH];
+    fn update(&mut self, data: &[u8; Self::BLOCK_LENGTH]);
+    fn digest(self, remainder: &[u8]) -> [u8; Self::DIGEST_LENGTH];
 }
 
 // pub(crate) fn general_update<E, const STATE_SIZE: usize, const COMPRESS_SIZE: usize>(

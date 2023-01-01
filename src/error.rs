@@ -30,13 +30,15 @@ impl fmt::Display for ECError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AeadError {
-    InvalidMac,
+    BadMac,
+    InvalidBlockSize,
 }
 
 impl fmt::Display for AeadError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Self::InvalidMac => write!(f, "Invalid Mac"),
+            Self::BadMac => write!(f, "Invalid Mac"),
+            Self::InvalidBlockSize => write!(f, "Invalid Block Size"),
         }
     }
 }

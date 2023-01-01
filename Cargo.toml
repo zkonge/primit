@@ -7,7 +7,7 @@ edition = "2021"
 getrandom = { version = "0.2", optional = true }
 
 [features]
-default = ["system-random"]
+default = ["system-random", "aesni"]
 system-random = ["getrandom"]
 aesni = []
 
@@ -19,6 +19,7 @@ poly1305 = "*"
 aes = "*"
 p256 = "*"
 aes-gcm = "*"
+chacha20poly1305 = "0.10.1"
 
 
 [profile.release]
@@ -26,5 +27,5 @@ codegen-units = 1
 debug = true
 incremental = false
 lto = "fat"
-opt-level = "s"
+opt-level = 3
 panic = "abort"

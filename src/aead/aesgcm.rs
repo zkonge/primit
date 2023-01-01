@@ -36,7 +36,7 @@ impl AESGCMEncryptor {
 
 impl Encryptor for AESGCMEncryptor {
     const MAC_LENGTH: usize = MAC_LENGTH;
-
+ 
     fn encrypt(&mut self, data: &mut [u8]) {
         // leftover keystream
         let key_stream_buffer_offset = self.data_length % 16;
@@ -140,7 +140,7 @@ impl Decryptor for AESGCMDecryptor {
         if mac == &self.head_block {
             Ok(())
         } else {
-            Err(AeadError::InvalidMac)
+            Err(AeadError::BadMac)
         }
     }
 }

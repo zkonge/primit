@@ -33,74 +33,43 @@ const INIT_VECTOR: [u32; STATE_SIZE] = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10
 pub struct MD5 {
     count: u64,
     state: [u32; STATE_SIZE],
-    buffer: [u8; COMPRESS_SIZE],
-    buffer_offset: usize,
 }
 
 impl Digest for MD5 {
-    const LENGTH: usize = 16;
+    const BLOCK_LENGTH: usize = COMPRESS_SIZE;
+    const DIGEST_LENGTH: usize = 16;
 
     fn new() -> Self {
         Self {
             count: 0,
             state: INIT_VECTOR,
-            buffer: [0; COMPRESS_SIZE],
-            // point to first unused position
-            buffer_offset: 0,
         }
     }
 
-    fn update(&mut self, data: &[u8]) {
-        let Self {
-            count,
-            buffer,
-            buffer_offset,
-            state,
-        } = self;
-
-        let data_length = data.len();
-
-        // process previous block
-        if *buffer_offset + data_length < COMPRESS_SIZE {
-            buffer[*buffer_offset..*buffer_offset + data_length].copy_from_slice(data);
-            *buffer_offset += data_length;
-            *count += data_length as u64;
-            return;
-        }
-
-        // compress buffer
-        buffer[*buffer_offset..].copy_from_slice(&data[..COMPRESS_SIZE - *buffer_offset]);
-        compress(state, buffer);
-        *count += COMPRESS_SIZE as u64;
-
-        // process current blocks
-        let (chunks, remain) = data[COMPRESS_SIZE - *buffer_offset..].as_chunks();
-        for chunk in chunks {
-            compress(state, chunk);
-        }
-        *count += COMPRESS_SIZE as u64 * chunks.len() as u64;
-
-        // move remainder to buffer
-        buffer[..remain.len()].copy_from_slice(remain);
-        *buffer_offset = remain.len();
-        *count += remain.len() as u64;
+    fn update(&mut self, data: &[u8; Self::BLOCK_LENGTH]) {
+        let Self { count, state } = self;
+        compress(state, data);
+        *count += Self::BLOCK_LENGTH as u64;
     }
 
-    fn digest(self) -> [u8; Self::LENGTH] {
-        let Self {
-            count,
-            mut state,
-            mut buffer,
-            buffer_offset,
-        } = self;
+    fn digest(mut self, remainder: &[u8]) -> [u8; Self::DIGEST_LENGTH] {
+        let (aligned_blocks, remainder) = remainder.as_chunks();
+        for block in aligned_blocks {
+            self.update(block);
+        }
 
-        let mut result = [0u8; Self::LENGTH];
+        let mut buffer = [0u8; Self::BLOCK_LENGTH];
+        buffer[..remainder.len()].copy_from_slice(remainder);
+
+        let Self { count, mut state } = self;
+
+        let mut result = [0u8; Self::DIGEST_LENGTH];
 
         // padding
-        buffer[buffer_offset] = 0x80;
-        buffer[buffer_offset + 1..].fill(0);
+        buffer[remainder.len()] = 0x80;
+        buffer[remainder.len() + 1..].fill(0);
 
-        if buffer_offset >= COMPRESS_SIZE - COUNTER_SIZE {
+        if remainder.len() >= COMPRESS_SIZE - COUNTER_SIZE {
             // not enough space for bit size
             compress(&mut state, &buffer);
             buffer.fill(0);
@@ -143,8 +112,6 @@ fn compress(state: &mut [u32; STATE_SIZE], data: &[u8; COMPRESS_SIZE]) {
         .for_each(|(s, x)| *s = s.wrapping_add(x));
 }
 
-pub fn md5(input: &[u8]) -> [u8; MD5::LENGTH] {
-    let mut hasher = MD5::new();
-    hasher.update(input);
-    hasher.digest()
+pub fn md5(input: &[u8]) -> [u8; MD5::DIGEST_LENGTH] {
+    MD5::new().digest(input)
 }
