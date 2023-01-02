@@ -61,7 +61,8 @@ impl Digest for MD5 {
         let mut buffer = [0u8; Self::BLOCK_LENGTH];
         buffer[..remainder.len()].copy_from_slice(remainder);
 
-        let Self { count, mut state } = self;
+        let Self { mut count, mut state } = self;
+        count += remainder.len() as u64;
 
         let mut result = [0u8; Self::DIGEST_LENGTH];
 

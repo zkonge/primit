@@ -7,14 +7,13 @@ use crate::{
 };
 
 const KEY_LENGTH: usize = 16;
+const BLOCK_LENGTH: usize = 16;
 const NONCE_LENGTH: usize = 12;
 const MAC_LENGTH: usize = 16;
 
 pub struct AESGCMEncryptor {
     cipher: AES128,
-    head_block: [u8; 16],
     state: [u8; 16],
-    keystream_buffer: [u8; 16],
     mac: GHash,
     ad_length: usize,
     data_length: usize,
@@ -22,64 +21,63 @@ pub struct AESGCMEncryptor {
 
 impl AESGCMEncryptor {
     fn next_key(&mut self) -> [u8; 16] {
+        let mut key = self.state;
+
         // increase counter
         let counter_slice = &mut self.state[12..16];
         let mut count = u32::from_be_bytes(counter_slice.try_into().unwrap());
         count = count.wrapping_add(1);
         counter_slice.copy_from_slice(&count.to_be_bytes());
 
-        let mut key = self.state;
         self.cipher.encrypt(&mut key);
         key
     }
 }
 
 impl Encryptor for AESGCMEncryptor {
+    const BLOCK_LENGTH: usize = BLOCK_LENGTH;
     const MAC_LENGTH: usize = MAC_LENGTH;
- 
-    fn encrypt(&mut self, data: &mut [u8]) {
-        // leftover keystream
-        let key_stream_buffer_offset = self.data_length % 16;
-        xor(data, &self.keystream_buffer[key_stream_buffer_offset..]);
 
-        if data.len() < self.keystream_buffer[key_stream_buffer_offset..].len() {
-            self.data_length += data.len();
-            return;
-        }
-
-        // padded data
-        let (chunks, remain) = data[16 - key_stream_buffer_offset..].as_chunks_mut::<16>();
-        for chunk in chunks {
-            xor(chunk, &self.next_key());
-        }
-        self.keystream_buffer = self.next_key();
-
-        xor(remain, &self.keystream_buffer);
+    fn encrypt(&mut self, data: &mut [u8; Self::BLOCK_LENGTH]) {
+        xor(data, &self.next_key());
         self.mac.update(data);
         self.data_length += data.len();
     }
 
-    fn finalize(mut self) -> [u8; Self::MAC_LENGTH] {
-        let buffer_offset = self.data_length % 16;
-        if buffer_offset != 0 {
-            self.mac.update(&[0u8; 16][..16 - buffer_offset]);
+    fn finalize(mut self, remainder: &mut [u8]) -> [u8; Self::MAC_LENGTH] {
+        let (blocks, remainder) = remainder.as_chunks_mut();
+        for block in blocks {
+            self.encrypt(block);
         }
+
+        if !remainder.is_empty() {
+            self.data_length += remainder.len();
+            xor(remainder, &self.next_key());
+            let mut buffer = [0u8; 16];
+            buffer[..remainder.len()].copy_from_slice(remainder);
+
+            self.mac.update(&buffer);
+        }
+
         let mut len_block = [0u8; 16];
         len_block[..8].copy_from_slice(&(self.ad_length * 8).to_be_bytes());
         len_block[8..].copy_from_slice(&(self.data_length * 8).to_be_bytes());
         self.mac.update(&len_block);
 
-        xor(&mut self.head_block, &self.mac.finalize());
+        let mut head_block = self.state;
+        // NIST SP800-38D
+        head_block[12..16].copy_from_slice(&[0, 0, 0, 1]);
 
-        self.head_block
+        self.cipher.encrypt(&mut head_block);
+        xor(&mut head_block, &self.mac.finalize(&[]));
+
+        head_block
     }
 }
 
 pub struct AESGCMDecryptor {
     cipher: AES128,
-    head_block: [u8; 16],
     state: [u8; 16],
-    keystream_buffer: [u8; 16],
     mac: GHash,
     ad_length: usize,
     data_length: usize,
@@ -87,57 +85,61 @@ pub struct AESGCMDecryptor {
 
 impl AESGCMDecryptor {
     fn next_key(&mut self) -> [u8; 16] {
+        let mut key = self.state;
+
         // increase counter
         let counter_slice = &mut self.state[12..16];
         let mut count = u32::from_be_bytes(counter_slice.try_into().unwrap());
         count = count.wrapping_add(1);
         counter_slice.copy_from_slice(&count.to_be_bytes());
 
-        let mut key = self.state;
         self.cipher.encrypt(&mut key);
         key
     }
 }
 
 impl Decryptor for AESGCMDecryptor {
+    const BLOCK_LENGTH: usize = BLOCK_LENGTH;
     const MAC_LENGTH: usize = MAC_LENGTH;
 
-    fn decrypt(&mut self, data: &mut [u8]) {
+    fn decrypt(&mut self, data: &mut [u8; Self::BLOCK_LENGTH]) {
         self.mac.update(data);
-
-        // leftover keystream
-        let key_stream_buffer_offset = self.data_length % 16;
-        xor(data, &self.keystream_buffer[key_stream_buffer_offset..]);
-
-        if data.len() < self.keystream_buffer[key_stream_buffer_offset..].len() {
-            self.data_length += data.len();
-            return;
-        }
-
-        // padded data
-        let (chunks, remain) = data[16 - key_stream_buffer_offset..].as_chunks_mut::<16>();
-        for chunk in chunks {
-            xor(chunk, &self.next_key());
-        }
-        self.keystream_buffer = self.next_key();
-
-        xor(remain, &self.keystream_buffer);
+        xor(data, &self.next_key());
         self.data_length += data.len();
     }
 
-    fn finalize(mut self, mac: &[u8; Self::MAC_LENGTH]) -> Result<(), AeadError> {
-        let buffer_offset = self.data_length % 16;
-        if buffer_offset != 0 {
-            self.mac.update(&[0u8; 16][..16 - buffer_offset]);
+    fn finalize(
+        mut self,
+        remainder: &mut [u8],
+        mac: &[u8; Self::MAC_LENGTH],
+    ) -> Result<(), AeadError> {
+        let (blocks, remainder) = remainder.as_chunks_mut();
+        for block in blocks {
+            self.decrypt(block);
         }
+
+        if !remainder.is_empty() {
+            self.data_length += remainder.len();
+            let mut buffer = [0u8; 16];
+            buffer[..remainder.len()].copy_from_slice(remainder);
+            self.mac.update(&buffer);
+
+            xor(remainder, &self.next_key());
+        }
+
         let mut len_block = [0u8; 16];
         len_block[..8].copy_from_slice(&(self.ad_length * 8).to_be_bytes());
         len_block[8..].copy_from_slice(&(self.data_length * 8).to_be_bytes());
         self.mac.update(&len_block);
 
-        xor(&mut self.head_block, &self.mac.finalize());
+        let mut head_block = self.state;
+        // NIST SP800-38D
+        head_block[12..16].copy_from_slice(&[0, 0, 0, 1]);
+        self.cipher.encrypt(&mut head_block);
 
-        if mac == &self.head_block {
+        xor(&mut head_block, &self.mac.finalize(&[]));
+
+        if mac == &head_block {
             Ok(())
         } else {
             Err(AeadError::BadMac)
@@ -166,27 +168,23 @@ impl Aead for AESGCM {
 
         let mut state = [0u8; 16];
         state[..NONCE_LENGTH].copy_from_slice(nonce);
-        // NIST SP800-38D
-        state[15] = 1;
-        let mut head_block = state;
-        self.0.encrypt(&mut head_block);
 
         // apply ad
-        mac.update(ad);
-        let left = ad.len() % 16;
-        if left != 0 {
-            mac.update(&[0u8; 16][..16 - left]);
+        let (ad_blocks, ad_remainder) = ad.as_chunks();
+        for block in ad_blocks {
+            mac.update(block);
+        }
+        if !ad_remainder.is_empty() {
+            let mut buffer = [0u8; 16];
+            buffer[..ad_remainder.len()].copy_from_slice(ad_remainder);
+            mac.update(&buffer);
         }
 
         state[15] = 2;
-        let mut keystream_buffer = state;
-        self.0.encrypt(&mut keystream_buffer);
 
         AESGCMEncryptor {
             cipher: self.0,
-            head_block,
             state,
-            keystream_buffer,
             mac,
             ad_length: ad.len(),
             data_length: 0,
@@ -197,12 +195,10 @@ impl Aead for AESGCM {
         let encryptor = self.encryptor(nonce, ad);
         AESGCMDecryptor {
             cipher: self.0,
-            head_block: encryptor.head_block,
             state: encryptor.state,
-            keystream_buffer: encryptor.keystream_buffer,
             mac: encryptor.mac,
-            ad_length: ad.len(),
-            data_length: 0,
+            ad_length: encryptor.ad_length,
+            data_length: encryptor.data_length,
         }
     }
 }

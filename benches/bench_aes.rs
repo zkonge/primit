@@ -3,6 +3,8 @@
 
 extern crate test;
 
+use aes::{Aes128, cipher::{BlockEncrypt, generic_array::GenericArray, BlockDecrypt}};
+use aes_gcm::KeyInit;
 use primit::symmetry::aes::AES128;
 use test::{black_box, Bencher};
 
@@ -32,6 +34,33 @@ fn bench_decrypt(b: &mut Bencher) {
     b.iter(|| {
         for chunk in d.as_chunks_mut::<16>().0 {
             cipher.decrypt(chunk)
+        }
+    });
+}
+#[bench]
+fn bench_std_encrypt(b: &mut Bencher) {
+    b.bytes = DATA_LENGTH as u64;
+
+    let mut d = black_box([0u8; DATA_LENGTH]);
+    let cipher = Aes128::new_from_slice(&[0u8;16]).unwrap();
+
+    b.iter(|| {
+        for chunk in d.as_chunks_mut::<16>().0 {
+            cipher.encrypt_block(GenericArray::from_mut_slice(chunk));
+        }
+    });
+}
+
+#[bench]
+fn bench_std_decrypt(b: &mut Bencher) {
+    b.bytes = DATA_LENGTH as u64;
+
+    let mut d = black_box([0u8; DATA_LENGTH]);
+    let cipher = Aes128::new_from_slice(&[0u8;16]).unwrap();
+
+    b.iter(|| {
+        for chunk in d.as_chunks_mut::<16>().0 {
+            cipher.decrypt_block(GenericArray::from_mut_slice(chunk));
         }
     });
 }

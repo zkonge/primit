@@ -41,7 +41,7 @@ impl Mac for Poly1305 {
             self.update(block);
         }
 
-        if remainder.len() != 0 {
+        if !remainder.is_empty() {
             let mut buffer = [0u8; Self::BLOCK_LENGTH];
             buffer[..remainder.len()].copy_from_slice(remainder);
             compress(&mut self, &buffer);

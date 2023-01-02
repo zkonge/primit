@@ -292,7 +292,7 @@ mod test {
     use super::{Int256, ONE, P256, ZERO};
 
     // FIXME more values
-    static VALUES_256: &'static [Int256] = &[
+    static VALUES_256: &[Int256] = &[
         ZERO,
         ONE,
         Int256([2, 0, 0, 0, 0, 0, 0, 0]),

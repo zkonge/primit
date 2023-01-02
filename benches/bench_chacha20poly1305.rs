@@ -3,8 +3,6 @@
 
 extern crate test;
 
-use aes::cipher::generic_array::GenericArray;
-use aes_gcm::KeyInit;
 use primit::aead::{chacha20poly1305::Chacha20Poly1305, Aead, Decryptor, Encryptor};
 use test::{black_box, Bencher};
 

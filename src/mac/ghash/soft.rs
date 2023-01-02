@@ -4,6 +4,7 @@ use core::{
 };
 
 use super::Mac;
+use crate::utils::endian::{EndianConvertion, LittleEndian};
 
 fn mulx(block: &[u8; 16]) -> [u8; 16] {
     let mut v = u128::from_le_bytes(*block);
@@ -42,7 +43,7 @@ impl Mac for GHash {
             self.update(block);
         }
 
-        if remainder.len() != 0 {
+        if !remainder.is_empty() {
             let mut buffer = [0u8; Self::BLOCK_LENGTH];
             buffer[..remainder.len()].copy_from_slice(remainder);
             compress(&mut self, &buffer);
@@ -54,7 +55,7 @@ impl Mac for GHash {
 }
 
 fn compress(state: &mut GHash, data: &[u8; GHash::BLOCK_LENGTH]) {
-    let mut x = data.clone();
+    let mut x = *data;
     x.reverse();
 
     state.core.update(&x);
@@ -83,12 +84,7 @@ impl Polyval {
     fn finalize(self) -> [u8; 16] {
         let mut block = [0u8; 16];
 
-        for (chunk, i) in block
-            .chunks_mut(4)
-            .zip(&[self.s.0, self.s.1, self.s.2, self.s.3])
-        {
-            chunk.copy_from_slice(&i.to_le_bytes());
-        }
+        LittleEndian::to_bytes(&mut block, &[self.s.0, self.s.1, self.s.2, self.s.3]);
 
         block
     }

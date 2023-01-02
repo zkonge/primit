@@ -12,7 +12,7 @@ fn test_chacha20poly1305() {
     let mut data = [
         20, 0, 0, 12, 82, 176, 48, 66, 102, 149, 142, 132, 230, 204, 153, 206,
     ];
-    let origin_data = data.clone();
+    let origin_data = data;
 
     let alg = Chacha20Poly1305::new(&key);
     let enc = alg.encryptor(&nonce, &aad);

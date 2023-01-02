@@ -40,7 +40,7 @@ impl Encryptor for Chacha20Poly1305Encryptor {
             self.mac.update(block);
         }
 
-        if remainder.len() != 0 {
+        if !remainder.is_empty() {
             let mut buffer = [0u8; 16];
             buffer[..remainder.len()].copy_from_slice(remainder);
             self.mac.update(&buffer);
@@ -83,7 +83,7 @@ impl Decryptor for Chacha20Poly1305Decryptor {
             self.mac.update(block);
         }
 
-        if remainder_cipher.len() != 0 {
+        if !remainder_cipher.is_empty() {
             let mut buffer = [0u8; 16];
             buffer[..remainder_cipher.len()].copy_from_slice(remainder_cipher);
             self.mac.update(&buffer);
@@ -129,7 +129,7 @@ impl Aead for Chacha20Poly1305 {
         for block in aligned_blocks {
             mac.update(block);
         }
-        if remainder_ad.len() != 0 {
+        if !remainder_ad.is_empty() {
             let mut buffer = [0u8; 16];
             buffer[..remainder_ad.len()].copy_from_slice(remainder_ad);
             mac.update(&buffer);

@@ -1,5 +1,5 @@
 use crate::error::AeadError;
-// pub mod aesgcm;
+pub mod aesgcm;
 pub mod chacha20poly1305;
 
 pub trait Aead {

@@ -14,5 +14,5 @@ fn bench_ghash(b: &mut Bencher) {
 
     let d = black_box([0u8; DATA_LENGTH]);
 
-    b.iter(|| ghash(&[0u8; 16], &mut d.as_chunks().0));
+    b.iter(|| ghash(&[0u8; 16], d.as_chunks().0));
 }

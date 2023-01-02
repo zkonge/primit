@@ -17,7 +17,7 @@ fn test_ghash() {
         0x7a,
     ];
 
-    assert_eq!(ghash(&key, &msg.as_chunks().0), expected);
+    assert_eq!(ghash(&key, msg.as_chunks().0), expected);
 
     assert_eq!(
         ghash(&[233u8; 16], &[[233u8; 16]; 2]),
