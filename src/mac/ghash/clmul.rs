@@ -87,7 +87,6 @@ impl Polyval {
             let h2 = _mm_xor_si128(h0, h1);
             let y0 = y;
 
-            // Multiply values partitioned to 64-bit parts
             let y1 = _mm_shuffle_epi32(y, 0x0E);
             let y2 = _mm_xor_si128(y0, y1);
             let t0 = _mm_clmulepi64_si128(y0, h0, 0x00);
@@ -99,7 +98,6 @@ impl Polyval {
             let v2 = _mm_xor_si128(t1, _mm_shuffle_epi32(t2, 0x0E));
             let v3 = _mm_shuffle_epi32(t1, 0x0E);
 
-            // Polynomial reduction
             let v2 = xor5(
                 v2,
                 v0,

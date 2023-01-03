@@ -28,7 +28,7 @@ fn test_chacha20poly1305() {
     );
 
     let dec = alg.decryptor(&nonce, &aad);
-    assert!(dec.finalize(&mut data,&mac).is_ok());
+    assert!(dec.finalize(&mut data, &mac).is_ok());
 
     assert_eq!(data, origin_data);
 }
