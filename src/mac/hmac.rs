@@ -1,6 +1,6 @@
 use crate::{
     hash::{sha256::SHA256, Digest},
-    utils::xor::xor,
+    utils::xor::xor_static,
 };
 
 // Rust trait can not handle assosiated const in generic
@@ -22,10 +22,8 @@ pub fn hmac<H: Digest>(
         k
     };
 
-    let mut o_key_pad = [0x5cu8; H::BLOCK_LENGTH];
     let mut i_key_pad = [0x36u8; H::BLOCK_LENGTH];
-    xor(&mut o_key_pad, &key);
-    xor(&mut i_key_pad, &key);
+    xor_static(&mut i_key_pad, &key);
 
     let i_msg_hash = {
         let mut h = H::new();
@@ -33,9 +31,16 @@ pub fn hmac<H: Digest>(
         h.digest(message)
     };
 
-    let mut h = H::new();
-    h.update(&o_key_pad);
-    (h.digest(&i_msg_hash), key)
+    let mut o_key_pad = [0x5cu8; H::BLOCK_LENGTH];
+    xor_static(&mut o_key_pad, &key);
+
+    let o_msg_hash = {
+        let mut h = H::new();
+        h.update(&o_key_pad);
+        h.digest(&i_msg_hash)
+    };
+
+    (o_msg_hash, key)
 }
 
 pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; SHA256::DIGEST_LENGTH] {
