@@ -4,7 +4,10 @@ use p256::{
     AffinePoint, Scalar,
 };
 use primit::{
-    ec::{p256::{P256, G}, ECDH},
+    ec::{
+        p256::{G, P256},
+        ECDH,
+    },
     rng::{cprng::FastRng, Rng},
     utils::hex::decode_fix,
 };
@@ -32,9 +35,7 @@ fn test_std_p256() {
         let std_result = (g * scalar_x).to_affine().x();
 
         let g = P256::new(&x);
-        let result = g
-            .exchange(&G.normalize().to_uncompressed_bytes())
-            .unwrap();
+        let result = g.exchange(&G.normalize().to_uncompressed_bytes()).unwrap();
 
         assert_eq!(std_result.as_slice(), result);
     }
