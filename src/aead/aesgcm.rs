@@ -51,7 +51,7 @@ impl Encryptor for AESGCMEncryptor {
         }
 
         for block in blocks.iter_mut() {
-            self.mac.update(&block);
+            self.mac.update(block);
         }
 
         if !remainder.is_empty() {

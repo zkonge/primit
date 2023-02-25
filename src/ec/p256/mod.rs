@@ -1,8 +1,6 @@
-use self::{
-    int256::Int256,
-    point256::{NPoint256, Point256, G},
-};
-use super::ECDHE;
+pub use self::point256::G;
+use self::{int256::Int256, point256::NPoint256};
+use super::ECDH;
 use crate::{error::ECError, rng::Rng};
 
 mod int256;
@@ -13,11 +11,16 @@ pub struct P256 {
     x: Int256,
 }
 
-impl ECDHE for P256 {
+impl ECDH for P256 {
     const POINT_SIZE: usize = 65;
     const INT_SIZE: usize = 32;
 
-    fn new(rng: &mut impl Rng) -> Self {
+    fn new(x: &[u8; Self::INT_SIZE]) -> Self {
+        let x = Int256::from_bytes(x).unwrap();
+        Self { x }
+    }
+
+    fn generate(rng: &mut impl Rng) -> Self {
         let mut buf = [0u8; 32];
         loop {
             rng.fill_bytes(&mut buf);
@@ -42,14 +45,5 @@ impl ECDHE for P256 {
         let gy = gy.to_point();
         let gxy = gy.mult_scalar(&self.x).normalize();
         Ok(gxy.x.to_bytes())
-    }
-}
-
-// #[cfg(test)]
-impl P256 {
-    pub const G: Point256 = G;
-    pub fn new_from_bytes(x: &[u8; 32]) -> Self {
-        let x = Int256::from_bytes(x).unwrap();
-        Self { x }
     }
 }

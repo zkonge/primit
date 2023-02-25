@@ -249,6 +249,7 @@ impl Int256 {
         y256_224.mult(&z192).mult(&y96_2)
     }
 
+    #[cfg(test)]
     pub fn divide_by_2(&self) -> Int256 {
         let is_odd = self.0[0] & 1;
 
