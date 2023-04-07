@@ -20,14 +20,3 @@ aes = "*"
 p256 = "*"
 aes-gcm = "*"
 chacha20poly1305 = "*"
-
-[profile.test]
-opt-level = 1
-
-[profile.release]
-codegen-units = 1
-debug = true
-incremental = false
-lto = "fat"
-opt-level = 3
-panic = "abort"

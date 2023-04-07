@@ -95,10 +95,10 @@ fn compress(state: &mut [u32; STATE_SIZE], data: &[u8; COMPRESS_SIZE]) {
 
     for i in 0..64 {
         let (f, g) = match i {
-            0..16 => ((b & c) | ((!b) & d), i),
-            16..32 => ((d & b) | ((!d) & c), (5 * i + 1) % 16),
-            32..48 => (b ^ c ^ d, (3 * i + 5) % 16),
-            48..64 => (c ^ (b | !d), (7 * i % 16)),
+            0..=15 => ((b & c) | ((!b) & d), i),
+            16..=31 => ((d & b) | ((!d) & c), (5 * i + 1) % 16),
+            32..=47 => (b ^ c ^ d, (3 * i + 5) % 16),
+            48..=63 => (c ^ (b | !d), (7 * i % 16)),
             _ => unreachable!(),
         };
         let temp = d;

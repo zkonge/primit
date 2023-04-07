@@ -1,6 +1,6 @@
 use chacha20::cipher::{KeyIvInit, StreamCipher};
 use primit::{
-    rng::{cprng::FastRng, Rng},
+    rng::{FastRng, Rng},
     symmetry::chacha::ChaCha20,
 };
 

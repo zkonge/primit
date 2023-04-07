@@ -162,11 +162,11 @@ fn inv_mix_columns(data: &mut [u32; 4]) {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct AES128 {
+pub struct Aes128 {
     round_key: [[u32; 4]; 11],
 }
 
-impl AES128 {
+impl Aes128 {
     pub fn new(key: &[u8; 16]) -> Self {
         let mut round_key = [[0u32; 4]; 11];
 
@@ -188,7 +188,7 @@ impl AES128 {
                 temp = *chunk;
             }
         }
-        AES128 { round_key }
+        Aes128 { round_key }
     }
 
     pub fn encrypt(&self, data: &mut [u8; 16]) {

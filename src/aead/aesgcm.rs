@@ -2,7 +2,7 @@ use super::{Aead, Decryptor, Encryptor};
 use crate::{
     error::AeadError,
     mac::{ghash::GHash, Mac},
-    symmetry::aes::AES128,
+    symmetry::aes::Aes128,
     utils::xor::{xor, xor_static},
 };
 
@@ -25,7 +25,7 @@ fn next_key(encryptor: &mut AESGCMEncryptor) -> [u8; 16] {
 }
 
 pub struct AESGCMEncryptor {
-    cipher: AES128,
+    cipher: Aes128,
     state: [u8; 16],
     mac: GHash,
     ad_length: usize,
@@ -131,7 +131,7 @@ impl Decryptor for AESGCMDecryptor {
     }
 }
 
-pub struct AESGCM(AES128);
+pub struct AESGCM(Aes128);
 
 impl Aead for AESGCM {
     const KEY_LENGTH: usize = KEY_LENGTH;
@@ -141,7 +141,7 @@ impl Aead for AESGCM {
     type Decryptor = AESGCMDecryptor;
 
     fn new(key: &[u8; Self::KEY_LENGTH]) -> Self {
-        Self(AES128::new(key))
+        Self(Aes128::new(key))
     }
 
     fn encryptor(&self, nonce: &[u8; Self::NONCE_LENGTH], ad: &[u8]) -> Self::Encryptor {

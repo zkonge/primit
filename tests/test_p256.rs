@@ -8,7 +8,7 @@ use primit::{
         p256::{G, P256},
         ECDH,
     },
-    rng::{cprng::FastRng, Rng},
+    rng::{FastRng, Rng},
     utils::hex::decode_fix,
 };
 

@@ -1,7 +1,7 @@
 use md5::{Digest, Md5};
 use primit::{
     hash::md5::md5,
-    rng::{cprng::FastRng, Rng},
+    rng::{FastRng, Rng},
 };
 
 #[test]

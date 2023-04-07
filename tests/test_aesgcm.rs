@@ -1,7 +1,7 @@
 use aes_gcm::{aead::AeadInPlace, aes::cipher::generic_array::GenericArray, Aes128Gcm, KeyInit};
 use primit::{
     aead::{aesgcm::AESGCM, Aead, Decryptor, Encryptor},
-    rng::{cprng::FastRng, Rng},
+    rng::{FastRng, Rng},
     utils::hex::decode_fix,
 };
 

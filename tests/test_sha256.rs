@@ -1,7 +1,7 @@
 use md5::Digest;
 use primit::{
     hash::sha256::sha256,
-    rng::{cprng::FastRng, Rng},
+    rng::{FastRng, Rng},
 };
 use sha2::Sha256;
 

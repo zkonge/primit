@@ -15,11 +15,11 @@ macro_rules! gen_round_key {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct AES128 {
+pub struct Aes128 {
     round_key: [__m128i; 20],
 }
 
-impl AES128 {
+impl Aes128 {
     pub fn new(key: &[u8; 16]) -> Self {
         unsafe {
             let mut rk: [__m128i; 20] = mem::zeroed();

@@ -1,10 +1,10 @@
 use aes::{
     cipher::{BlockDecrypt, BlockEncrypt, KeyInit},
-    Aes128,
+    Aes128 as StdAes128,
 };
 use primit::{
-    rng::{cprng::FastRng, Rng},
-    symmetry::aes::AES128,
+    rng::{FastRng, Rng},
+    symmetry::aes::Aes128,
 };
 
 #[test]
@@ -17,10 +17,10 @@ fn test_encrypt() {
         rng.fill_bytes(&mut key);
         let mut output = input;
 
-        let cipher = AES128::new(&key);
+        let cipher = Aes128::new(&key);
         cipher.encrypt(&mut output);
 
-        let std_cipher = Aes128::new_from_slice(&key).unwrap();
+        let std_cipher = StdAes128::new_from_slice(&key).unwrap();
         std_cipher.decrypt_block((&mut output).into());
 
         assert_eq!(input, output);
@@ -35,10 +35,10 @@ fn test_decrypt() {
     for _ in 0..1000 {
         let mut output = input;
 
-        let std_cipher = Aes128::new_from_slice(&key).unwrap();
+        let std_cipher = StdAes128::new_from_slice(&key).unwrap();
         std_cipher.encrypt_block((&mut output).into());
 
-        let cipher = AES128::new(&key);
+        let cipher = Aes128::new(&key);
         cipher.decrypt(&mut output);
 
         assert_eq!(input, output);
