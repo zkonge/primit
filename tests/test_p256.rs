@@ -1,6 +1,6 @@
 use aes::cipher::generic_array::GenericArray;
 use p256::{
-    elliptic_curve::{ops::Reduce, AffineXCoordinate},
+    elliptic_curve::{point::AffineCoordinates, PrimeField},
     AffinePoint, Scalar,
 };
 use primit::{
@@ -31,7 +31,8 @@ fn test_std_p256() {
         rng.fill_bytes(&mut x);
 
         let g = AffinePoint::GENERATOR;
-        let scalar_x = Scalar::from_be_bytes_reduced(*GenericArray::from_slice(&x));
+
+        let scalar_x = Scalar::from_repr(*GenericArray::from_slice(&x)).unwrap();
         let std_result = (g * scalar_x).to_affine().x();
 
         let g = P256::new(&x);
