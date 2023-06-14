@@ -9,8 +9,8 @@ pub enum HexCodecError {
 impl fmt::Display for HexCodecError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Self::InvalidHexCharacter => write!(f, "Invalid hex character"),
-            Self::InvalidHexLength => write!(f, "Invalid hex string length"),
+            Self::InvalidHexCharacter => f.write_str("Invalid hex character"),
+            Self::InvalidHexLength => f.write_str("Invalid hex string length"),
         }
     }
 }
@@ -23,7 +23,7 @@ pub enum ECError {
 impl fmt::Display for ECError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Self::InvalidPublicKey => write!(f, "Invalid public key"),
+            Self::InvalidPublicKey => f.write_str("Invalid public key"),
         }
     }
 }
@@ -37,8 +37,8 @@ pub enum AeadError {
 impl fmt::Display for AeadError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Self::BadMac => write!(f, "Invalid Mac"),
-            Self::InvalidBlockSize => write!(f, "Invalid Block Size"),
+            Self::BadMac => f.write_str("Invalid Mac"),
+            Self::InvalidBlockSize => f.write_str("Invalid Block Size"),
         }
     }
 }

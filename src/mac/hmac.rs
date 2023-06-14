@@ -1,16 +1,13 @@
-use crate::{
-    hash::{sha256::SHA256, Digest},
-    utils::xor::xor_static,
-};
+use crate::{hash::Digest, utils::xor::xor_static};
 
 // Rust trait can not handle assosiated const in generic
 // so hmac function returns two array:
 // 1. the first array is the hmac result
 // 2. the second array is the hmac internal key, you can always ignore it
-pub fn hmac<H: Digest>(
-    key: &[u8],
-    message: &[u8],
-) -> ([u8; H::DIGEST_LENGTH], [u8; H::BLOCK_LENGTH]) {
+pub fn hmac<H: Digest>(key: &[u8], message: &[u8]) -> [u8; H::DIGEST_LENGTH]
+where
+    [(); H::BLOCK_LENGTH]:,
+{
     let key = if key.len() > H::BLOCK_LENGTH {
         let mut k = [0u8; H::BLOCK_LENGTH];
         k[..H::BLOCK_LENGTH].copy_from_slice(&H::new().digest(key));
@@ -40,9 +37,5 @@ pub fn hmac<H: Digest>(
         h.digest(&i_msg_hash)
     };
 
-    (o_msg_hash, key)
-}
-
-pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; SHA256::DIGEST_LENGTH] {
-    hmac::<SHA256>(key, message).0
+    o_msg_hash
 }

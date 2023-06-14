@@ -2,7 +2,7 @@
 
 extern crate test;
 
-use primit::mac::hmac::hmac_sha256;
+use primit::{hash::sha256::SHA256, mac::hmac::hmac};
 use test::{black_box, Bencher};
 
 const DATA_LENGTH: usize = 1024 * 256;
@@ -14,7 +14,7 @@ fn bench_hmac_sha256_large(b: &mut Bencher) {
     let k = black_box([233u8; 32]);
     let d = black_box([233u8; DATA_LENGTH]);
 
-    b.iter(|| hmac_sha256(&k, &d));
+    b.iter(|| hmac::<SHA256>(&k, &d));
 }
 
 #[bench]
@@ -24,5 +24,5 @@ fn bench_hmac_sha256_small(b: &mut Bencher) {
     let k = black_box([233u8; 32]);
     let d = black_box([233u8; 32]);
 
-    b.iter(|| hmac_sha256(&k, &d));
+    b.iter(|| hmac::<SHA256>(&k, &d));
 }
